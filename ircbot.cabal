@@ -21,5 +21,11 @@ executable ircbot
   -- other-modules:       
   -- other-extensions:    
   build-depends:       base >=4.6 && <4.7
-  -- hs-source-dirs:      
+                     , transformers >= 0.3.0.0
+                     , exceptions >= 0.6.1
+                     , conduit >= 1.0.17.1
+                     , conduit-extra >= 1.1.0.4
+                     , attoparsec >= 0.12.0.0
+                     , text >= 1.1.0.0
+  hs-source-dirs:      src/
   default-language:    Haskell2010
