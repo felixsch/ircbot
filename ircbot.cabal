@@ -26,6 +26,7 @@ executable ircbot
                      , conduit >= 1.0.17.1
                      , conduit-extra >= 1.1.0.4
                      , attoparsec >= 0.12.0.0
-                     , text >= 1.1.0.0
+                     , text >= 0.10.0.2
+                     , bytestring >= 0.10.0.2
   hs-source-dirs:      src/
   default-language:    Haskell2010
