@@ -2,6 +2,8 @@ import System.IO
 
 
 import Network.IRC.Conduit
+import Network.IRC.Client
+
 
 main :: IO ()
-main = putStrLn "Moep"
+main = runIRC testClient testCon

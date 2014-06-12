@@ -1,6 +1,9 @@
+{-# LANGUAGE OverloadedStrings #-}
+
 module Network.IRC.Client
   ( IRCClient(..)
   , Channel
+  , testClient
   ) where
 
 import Data.Text
@@ -14,6 +17,16 @@ data IRCClient = IRCClient
   , channels :: [Text]
   , nickname :: Text
   , realname :: Text
+  }
+
+
+testClient :: IRCClient
+testClient = IRCClient
+  { server = "irc.freenode.org"
+  , port   = 6667
+  , channels = ["#felixsch", "#fde"]
+  , nickname = "blublubbot"
+  , realname = "felixsch irc bot"
   }
 
 
