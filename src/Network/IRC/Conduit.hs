@@ -3,10 +3,12 @@
 
 module Network.IRC.Conduit
   ( IRCConduit
-  , ircGetLine
-  , ircPutLine
+  , ircGet
+  , ircPut
   , runIRC
-  , testCon
+  , send
+  , onAction
+  , onChannel
   ) where
 
 import Control.Monad.IO.Class
@@ -14,7 +16,7 @@ import Control.Monad.Catch
 
 import Network hiding (sClose, connectTo)
 import Network.BSD
-import Network.Socket
+import Network.Socket hiding (send)
 import Data.Char (chr)
 import Data.ByteString (ByteString)
 import Data.Text
@@ -24,87 +26,102 @@ import Data.Conduit
 import qualified Data.Conduit.List as CL
 import Data.Conduit.Network
 
-
+import Network.IRC
 import Network.IRC.Message
-import Network.IRC.Client
+import Network.IRC.Command
 
-type IRCSource m  = Source m IRCMessage
-type IRCSink m    = Sink IRCMessage m ()
-type IRCConduit m = Conduit IRCMessage m IRCMessage
+type IRC = Either Message Command
+
+type IRCSource m  = Source m IRC
+type IRCSink m    = Sink IRC m ()
+type IRCConduit m = Conduit IRC m IRC
 
 
 connectTo :: String -> PortID -> IO Socket
-connectTo hostname (PortNumber port)= do
+connectTo hostname (PortNumber po)= do
     proto <- getProtocolNumber "tcp"
     bracketOnError
         (socket AF_INET Stream proto)
         sClose
         (\s -> do
             h <- getHostByName hostname
-            connect s (SockAddrInet port (hostAddress h))
+            connect s (SockAddrInet po (hostAddress h))
             return s
         )
+connectTo _ _ = error "failed..."
+
+ircGet :: (MonadIO m) => Conduit ByteString m IRC
+ircGet = decode =$= parseMessage =$= toEither
+  where
+    decode = CL.map $ decodeUtf8With utf8Failed
+
+    utf8Failed _ (Just a) = Just $ chr $ fromEnum a
+    utf8Failed _ Nothing  = Just '�'
+
+    toEither = awaitForever (yield . Left)
 
 
-
-
-convertByteString :: (Monad m) => Conduit ByteString m Text
-convertByteString = CL.map (decodeUtf8With utf8Failed)
+ircPut :: (MonadIO m) => Conduit IRC m ByteString
+ircPut = awaitForever fromEither =$= showCommand' =$= prepareCommand =$= encode
     where
-        utf8Failed _ (Just a) = Just $ chr $ fromEnum a
-        utf8Failed _ Nothing  = Just '�'
+      fromEither (Left _) = return ()
+      fromEither (Right cmd) = yield cmd
 
-convertText :: (Monad m) => Conduit Text m ByteString
-convertText = CL.map encodeUtf8
+      prepareCommand = CL.map $ \x -> showCommand x `append` "\r\n"
 
-
-ircGetLine :: (MonadIO m, MonadThrow m) => Conduit ByteString m IRCMessage
-ircGetLine = convertByteString =$ decodeMessage
-
-
-ircPutLine :: (Monad m) => Conduit IRCMessage m ByteString
-ircPutLine = encodeMessage =$ convertText
+      encode = CL.map encodeUtf8
+    
+      showCommand' = awaitForever $ \x -> do
+         liftIO $ putStrLn $ "Sending " ++ show x
+         yield x
 
 
-runIRC :: (MonadIO m, MonadThrow m) => IRCClient -> IRCConduit m  -> m ()
+connectIRC :: (MonadIO m) => IRCClient -> IRCConduit m -> Conduit IRC m IRC
+connectIRC client cmd = waitForNotice (3 :: Int)
+    where
+      waitForNotice 0 = initIRC >> cmd
+      waitForNotice x = await >>= isValue >> wait (x -1) >> waitForNotice (x -1) 
+
+      wait x = liftIO $ putStrLn $ "need to wait for another " ++ show x ++ " messages..."
+      isValue (Just x) = yield x
+      isValue Nothing  = return ()
+
+      initIRC = do
+        liftIO $ putStrLn "initializing irc..."
+        send $ raw "NICK" [nickname client] Nothing
+        send $ raw "USER" [nickname client, "0", "*", ':' `cons` realname client] Nothing
+        mapM_ (send . join) $ channels client
+
+send :: (Monad m) => Command -> ConduitM i IRC m ()
+send = yield . Right
+
+
+runIRC :: (MonadIO m) => IRCClient -> IRCConduit m  -> m ()
 runIRC client cmd = do
     sock <- liftIO $ connectTo (server client) (PortNumber $ fromIntegral $ port client)
-    conduitIRC client cmd (sourceSocket sock $= ircGetLine) (ircPutLine =$ sinkSocket sock) 
+    sourceSocket sock $= ircGet =$= connectIRC client cmd =$= ircPut $$ sinkSocket sock
     liftIO $ sClose sock
     
 
-conduitIRC :: (MonadIO m) => IRCClient -> IRCConduit m -> IRCSource m -> IRCSink m -> m ()
-conduitIRC client cmd src snk = setup
+
+onAction :: (MonadIO m) => Cmd -> IRCConduit m -> IRCConduit m
+onAction action cb = awaitForever checkMessage
     where
-        setup = src $$ cmd =$= setupIRC client =$ snk
-    
-setupIRC :: (MonadIO m) => IRCClient -> Conduit IRCMessage m IRCMessage
-setupIRC client = do
-    liftIO $ putStrLn "setupIRC"
-    _ <- await
-    yield $ raw "NICK" [nickname client]
-    yield $ raw "USER" [nickname client, "0", "*", ':' `cons` realname client]
-    mapM_ (\channel -> yield $ raw "JOIN" [channel]) $ channels client
-    liftIO $ putStrLn "setupIRC -- done"
+        checkMessage msg@(Left m) = checkIf (cmd m) msg
+        checkMessage x            = yield x
 
-onAction :: (Monad m) => Text -> (IRCConduit m) -> IRCConduit m
-onAction = undefined
-
-onPrivMsg :: (Monad m) => (Nick -> Hostname -> IRCConduit m) -> IRCConduit m
-onPrivMsg = undefined
-
-onChan :: (Monad m) => (Channel -> IRCConduit m) -> IRCConduit m
-onChan = undefined
-
-
-testCon :: (MonadIO m) => Conduit IRCMessage m IRCMessage
-testCon = CL.mapM $ \msg -> do
-    liftIO . TIO.putStrLn $ '>' `cons` showMessage msg
-    return msg
+        checkIf a msg
+          | a == action = leftover msg >> cb
+          | otherwise   = yield msg
 
 
 
+onChannel :: (MonadIO m) => Channel -> IRCConduit m -> IRCConduit m
+onChannel channel cb = onAction "PRIVMSG" $ awaitForever checkMessage
+    where
+      checkMessage msg@(Left m) = checkIfChannel (params m) msg
+      checkMessage x            = yield x
 
-
-
-
+      checkIfChannel (x:xs) msg
+       | "#" `isPrefixOf` x = leftover msg >> cb
+       | otherwise          = yield msg
