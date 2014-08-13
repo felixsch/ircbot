@@ -63,6 +63,9 @@ bang = void $ char '!'
 ws :: Parser ()
 ws = void $ char ' '
 
+newline :: Parser ()
+newline = void $ char '\n'
+
 parseOrigin :: Parser (Maybe Origin)
 parseOrigin = option Nothing $ Just <$> (try parseNickname <|> parseHost)
 
@@ -83,7 +86,7 @@ parseCommand = (takeWhile1 isUpper <|> takeWhile1 isDigit) <* ws
 parseParams :: Parser [T.Text]
 parseParams = many1 (end <|> str)
     where
-        end = colon *> takeText
+        end = colon *> (T.replace "\r\n" T.empty <$> takeText)
         str = takeWhile (/= ' ') <* ws
 
 

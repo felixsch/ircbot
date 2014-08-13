@@ -29,11 +29,11 @@ data IRCClient = IRCClient
 
 testClient :: IRCClient
 testClient = IRCClient
-  { server = "irc.freenode.org"
+  { server = "irc.quakenet.org"
   , port   = 6667
-  , channels = ["#felixsch","#fde"]
-  , nickname = "blublubbot"
-  , realname = "felixsch irc bot"
+  , channels = ["#hacky.v2", "#hAcky.v2"]
+  , nickname = "joogisb"
+  , realname = "moep bot moep"
   }
 
 

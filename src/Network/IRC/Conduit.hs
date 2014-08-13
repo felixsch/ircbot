@@ -3,6 +3,8 @@
 
 module Network.IRC.Conduit
   ( IRCConduit
+  , IRCSource
+  , IRCSink
   , ircGet
   , ircPut
   , runIRC
@@ -20,8 +22,8 @@ import Network.Socket hiding (send)
 import Data.Char (chr)
 import Data.ByteString (ByteString)
 import Data.Text
-import qualified Data.Text.IO as TIO
 import Data.Text.Encoding
+import qualified Data.Text.IO as TIO
 import Data.Conduit
 import qualified Data.Conduit.List as CL
 import Data.Conduit.Network
@@ -62,34 +64,32 @@ ircGet = decode =$= parseMessage =$= toEither
 
 
 ircPut :: (MonadIO m) => Conduit IRC m ByteString
-ircPut = awaitForever fromEither =$= showCommand' =$= prepareCommand =$= encode
+ircPut = awaitForever fromEither =$= prepareCommand =$= encode
     where
       fromEither (Left _) = return ()
-      fromEither (Right cmd) = yield cmd
+      fromEither (Right c) = yield c
 
       prepareCommand = CL.map $ \x -> showCommand x `append` "\r\n"
 
       encode = CL.map encodeUtf8
     
-      showCommand' = awaitForever $ \x -> do
-         liftIO $ putStrLn $ "Sending " ++ show x
-         yield x
-
 
 connectIRC :: (MonadIO m) => IRCClient -> IRCConduit m -> Conduit IRC m IRC
-connectIRC client cmd = waitForNotice (3 :: Int)
+connectIRC client worker = waitForNotice (4:: Int)
     where
-      waitForNotice 0 = initIRC >> cmd
-      waitForNotice x = await >>= isValue >> wait (x -1) >> waitForNotice (x -1) 
+      waitForNotice 0 = initIRC >> worker
+      waitForNotice x = await >>= isValue >> waitForNotice (x -1) 
 
-      wait x = liftIO $ putStrLn $ "need to wait for another " ++ show x ++ " messages..."
       isValue (Just x) = yield x
       isValue Nothing  = return ()
 
       initIRC = do
         liftIO $ putStrLn "initializing irc..."
+        liftIO $ putStrLn "setting up nick..."
         send $ raw "NICK" [nickname client] Nothing
-        send $ raw "USER" [nickname client, "0", "*", ':' `cons` realname client] Nothing
+        liftIO $ putStrLn "setting up user..."
+        send $ raw "USER" [nickname client, "0", "*", ':' `cons` realname client] Nothing 
+        liftIO $ putStrLn "joining channels..."
         mapM_ (send . join) $ channels client
 
 send :: (Monad m) => Command -> ConduitM i IRC m ()
@@ -97,9 +97,9 @@ send = yield . Right
 
 
 runIRC :: (MonadIO m) => IRCClient -> IRCConduit m  -> m ()
-runIRC client cmd = do
+runIRC client worker = do
     sock <- liftIO $ connectTo (server client) (PortNumber $ fromIntegral $ port client)
-    sourceSocket sock $= ircGet =$= connectIRC client cmd =$= ircPut $$ sinkSocket sock
+    sourceSocket sock $= ircGet =$= connectIRC client worker =$= ircPut $$ sinkSocket sock
     liftIO $ sClose sock
     
 
@@ -111,17 +111,17 @@ onAction action cb = awaitForever checkMessage
         checkMessage x            = yield x
 
         checkIf a msg
-          | a == action = leftover msg >> cb
+          | a == action = leftover msg >> cb 
           | otherwise   = yield msg
 
 
 
 onChannel :: (MonadIO m) => Channel -> IRCConduit m -> IRCConduit m
-onChannel channel cb = onAction "PRIVMSG" $ awaitForever checkMessage
+onChannel chan cb = onAction "PRIVMSG" $ awaitForever checkMessage
     where
       checkMessage msg@(Left m) = checkIfChannel (params m) msg
       checkMessage x            = yield x
 
-      checkIfChannel (x:xs) msg
-       | "#" `isPrefixOf` x = leftover msg >> cb
-       | otherwise          = yield msg
+      checkIfChannel (x:_) msg
+       | chan == x  = leftover msg >> cb
+       | otherwise  = yield msg
