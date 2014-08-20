@@ -174,16 +174,12 @@ setup = do
     modify (\conf -> conf { connections = cons })
 
     forM_ cons $ \(server,(hdl,_)) -> void . fork . forever $ do
-        startLoop
         line <- liftIO $ hGetLine hdl
         case parseMessage line of
             Just msg -> void $ fork (handleMessage server msg)
             Nothing  -> do
-                ircLog Nothing "Mailformed message"
+                ircLog Nothing $ "Mailformed message: " ++ (show $ unpack line)
                 throwError $ MailformedMessage (show $ unpack $ line)
-
-startLoop :: Irc ()
-startLoop = ircLog Nothing "Starting reader loop"
 
 handleMessage :: Server -> Message -> Irc ()
 handleMessage server msg = ircLog (Just $ unpack server) (unpack $ showMessage msg) 

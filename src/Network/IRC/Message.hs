@@ -42,7 +42,7 @@ instance Show Message where
     show = unpack . showMessage
 
 showMessage :: Message -> ByteString
-showMessage msg = prefix (origin msg) `append` unwords (cmd msg : params msg) `append` "\r\n"
+showMessage msg = prefix (origin msg) `append` unwords (cmd msg : params msg)
     where
         prefix (Just (Host a))            = ':' `cons` a `append` " "
         prefix (Just (Nickname n (Just h))) = ':' `cons` n `append` "!~" `append` h `append` " "
@@ -87,7 +87,7 @@ parseCommand :: Parser ByteString
 parseCommand = (takeWhile1 isUpper <|> takeWhile1 isDigit) <* ws
 
 parseParams :: Parser [ByteString]
-parseParams = many1 (end <|> str) <* char '\r' <* char '\n'
+parseParams = many1 (end <|> str) <* char '\r'
     where
         end = colon *> takeWhile (/= '\r')
         str = takeWhile isOk <* ws
