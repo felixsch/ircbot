@@ -10,7 +10,7 @@ module Network.IRC.Command
 
 import Prelude hiding (unwords)
 
-import Data.Text
+import Data.ByteString.Char8
 import Data.Maybe
 
 import Network.IRC
@@ -20,7 +20,7 @@ data Command = Command Cmd [Param] (Maybe Param)
 instance Show Command where
     show = unpack . showCommand
 
-showCommand :: Command -> Text
+showCommand :: Command -> ByteString
 showCommand (Command cmd params trail) = cmd `append` " " `append` unwords params `append` " " `append` maybe empty (cons ':') trail
 
 
@@ -31,7 +31,7 @@ raw = Command
 join :: Channel -> Command
 join channel = raw "JOIN" [channel] Nothing
 
-putChannel :: Channel -> Text -> Command
+putChannel :: Channel -> ByteString -> Command
 putChannel channel msg = raw "PRIVMSG" [channel] (Just msg)
 
 

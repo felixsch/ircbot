@@ -14,10 +14,10 @@ import Control.Monad.IO.Class
 
 import Control.Applicative hiding (empty)
 
-import qualified Data.Text as T
-import Data.Char (isUpper, isDigit)
+import Data.Char (isUpper)
 import Data.Conduit
-import Data.Attoparsec.Text
+import Data.ByteString.Char8 hiding (takeWhile, elem)
+import Data.Attoparsec.ByteString.Char8
 
 import Network.IRC
 
@@ -32,27 +32,21 @@ data Message = Message
 
 
 instance Show Message where
-    show = T.unpack . showMessage
+    show = unpack . showMessage
 
-showMessage :: Message -> T.Text
-showMessage msg = prefix (origin msg) `T.append` T.unwords (cmd msg : params msg) `T.append` "\r\n"
+showMessage :: Message -> ByteString
+showMessage msg = prefix (origin msg) `append` unwords (cmd msg : params msg) `append` "\r\n"
     where
-        prefix (Just (Server a))            = ':' `T.cons` a `T.append` " "
-        prefix (Just (Nickname n (Just h))) = ':' `T.cons` n `T.append` "!~" `T.append` h `T.append` " "
-        prefix (Just (Nickname n Nothing))  = ':' `T.cons` n `T.append` " "
-        prefix Nothing                      = T.empty
+        prefix (Just (Server a))            = ':' `cons` a `append` " "
+        prefix (Just (Nickname n (Just h))) = ':' `cons` n `append` "!~" `append` h `append` " "
+        prefix (Just (Nickname n Nothing))  = ':' `cons` n `append` " "
+        prefix Nothing                      = empty
 
 
-
-parseMessage :: (MonadIO m) => Conduit T.Text m Message
-parseMessage = awaitForever $ \t -> 
-    case parseOnly attoParseMessage t of
-        Left _ -> return ()
-        Right msg -> yield msg
-
-
-attoParseMessage :: Parser Message
-attoParseMessage = Message <$> parseOrigin <*> parseCommand <*> parseParams
+parseMessage :: ByteString -> (Either String Message)
+parseMessage = parseOnly parser
+    where
+        parser = Message <$> parseOrigin <*> parseCommand <*> parseParams
 
 colon :: Parser Char
 colon = char ':'
@@ -80,14 +74,17 @@ parseNickname = Nickname <$ colon <*> name <*> maybeHost
       name = takeTill (`elem` " .!") <* (bang <|> ws)
       maybeHost = option Nothing $ Just <$> (char '~' *> takeTill (== ' ') <* ws)
 
-parseCommand :: Parser T.Text
+parseCommand :: Parser ByteString
 parseCommand = (takeWhile1 isUpper <|> takeWhile1 isDigit) <* ws
 
-parseParams :: Parser [T.Text]
-parseParams = many1 (end <|> str)
+parseParams :: Parser [ByteString]
+parseParams = many1 (end <|> str) <* char '\r' <* char '\n'
     where
-        end = colon *> (T.replace "\r\n" T.empty <$> takeText)
-        str = takeWhile (/= ' ') <* ws
-
-
+        end = colon *> takeWhile (/= '\r')
+        str = takeWhile isOk <* ws
+        
+        isOk '\n' = False
+        isOk '\r' = False
+        isOk ' '  = False
+        isOk _    = True
 
