@@ -2,7 +2,10 @@
 
 module Network.IRC.Command
   ( Command(..)
+  , Channel
+  , Server
   , showCommand
+  , commandDestination
   , raw
   , join
   , putChannel
@@ -13,26 +16,32 @@ import Prelude hiding (unwords)
 import Data.ByteString.Char8
 import Data.Maybe
 
-import Network.IRC
+import Network.IRC.Message
 
-data Command = Command Cmd [Param] (Maybe Param)
+type Channel = ByteString
+type Server  = ByteString
+
+data Command = Command Server Cmd [Param] (Maybe Param)
 
 instance Show Command where
     show = unpack . showCommand
 
 showCommand :: Command -> ByteString
-showCommand (Command cmd params trail) = cmd `append` " " `append` unwords params `append` " " `append` maybe empty (cons ':') trail
+showCommand (Command _ cmd params trail) = cmd `append` " " `append` unwords params `append` " " `append` maybe empty (cons ':') trail
+
+commandDestination :: Command -> Server
+commandDestination (Command server _ _ _) = server
 
 
-raw :: Cmd -> [Param]-> Maybe Param -> Command
+raw :: Server -> Cmd -> [Param]-> Maybe Param -> Command
 raw = Command
 
 
-join :: Channel -> Command
-join channel = raw "JOIN" [channel] Nothing
+join :: Server -> Channel -> Command
+join server channel = raw server "JOIN" [channel] Nothing
 
-putChannel :: Channel -> ByteString -> Command
-putChannel channel msg = raw "PRIVMSG" [channel] (Just msg)
+putChannel :: Server -> Channel -> ByteString -> Command
+putChannel server channel msg = raw server "PRIVMSG" [channel] (Just msg)
 
 
 

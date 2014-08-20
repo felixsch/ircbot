@@ -4,7 +4,6 @@ import Control.Monad
 import Network.URI
 import Data.ByteString.Char8 hiding (putStrLn)
 import Network.IRC
-import Network.IRC.Conduit
 import Network.IRC.Command
 import Network.IRC.Message
 
@@ -40,13 +39,14 @@ quakenet = IrcServerSettings
 
 myConfig = IrcConfig
   { servers = [freenode, quakenet]
+  , verbose = True
   }
 
 
 
 main :: IO ()
 main = do
-    error <- runIRC myConfig $ createIrc
+    error <- runIRC myConfig
     case error of
         Just err -> putStrLn $ show err
         Nothing  -> putStrLn "bye"

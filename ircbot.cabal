@@ -32,6 +32,10 @@ executable ircbot
                      , bytestring >= 0.10.0.2
                      , network >= 2.5.0.0
                      , http-conduit >= 2.1.2.3
+                     , old-locale >= 1.0.0.5
+                     , time >= 1.4.0.1
+                     , transformers-base >= 0.4.2
+                     , monad-control >= 0.3.3.0
   pkgconfig-depends:   opencv
   c-sources:           src/detectTheCat.c
   hs-source-dirs:      src/

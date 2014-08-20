@@ -3,6 +3,10 @@
 module Network.IRC.Message
   ( Origin(..)
   , Message(..)
+  , Hostname
+  , Name
+  , Cmd
+  , Param
   , showMessage
   , parseMessage
   ) where
@@ -15,13 +19,16 @@ import Control.Monad.IO.Class
 import Control.Applicative hiding (empty)
 
 import Data.Char (isUpper)
-import Data.Conduit
 import Data.ByteString.Char8 hiding (takeWhile, elem)
 import Data.Attoparsec.ByteString.Char8
 
-import Network.IRC
 
-data Origin = Server Hostname
+type Hostname = ByteString
+type Name     = ByteString
+type Cmd      = ByteString
+type Param    = ByteString
+
+data Origin = Host Hostname
             | Nickname Name (Maybe Hostname)
             deriving (Show, Eq)
 
@@ -37,16 +44,18 @@ instance Show Message where
 showMessage :: Message -> ByteString
 showMessage msg = prefix (origin msg) `append` unwords (cmd msg : params msg) `append` "\r\n"
     where
-        prefix (Just (Server a))            = ':' `cons` a `append` " "
+        prefix (Just (Host a))            = ':' `cons` a `append` " "
         prefix (Just (Nickname n (Just h))) = ':' `cons` n `append` "!~" `append` h `append` " "
         prefix (Just (Nickname n Nothing))  = ':' `cons` n `append` " "
         prefix Nothing                      = empty
 
 
-parseMessage :: ByteString -> (Either String Message)
-parseMessage = parseOnly parser
+parseMessage :: ByteString -> Maybe Message
+parseMessage = fromEither . parseOnly parser
     where
         parser = Message <$> parseOrigin <*> parseCommand <*> parseParams
+        fromEither (Left _)    = Nothing
+        fromEither (Right msg) = Just msg
 
 colon :: Parser Char
 colon = char ':'
@@ -64,7 +73,7 @@ parseOrigin :: Parser (Maybe Origin)
 parseOrigin = option Nothing $ Just <$> (try parseNickname <|> parseHost)
 
 parseHost :: Parser Origin
-parseHost = Server <$ colon <*> host <* ws
+parseHost = Host <$ colon <*> host <* ws
     where
         host = takeWhile (/= ' ')
 
