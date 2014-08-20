@@ -21,6 +21,8 @@ executable ircbot
   -- other-modules:       
   -- other-extensions:    
   build-depends:       base >=4.6 && <4.7.0.1
+                     , mtl >= 2.1.2
+                     , stm >= 2.4.2
                      , transformers >= 0.3.0.0
                      , exceptions >= 0.6.1
                      , conduit >= 1.0.17.1
