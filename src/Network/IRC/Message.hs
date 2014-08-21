@@ -26,16 +26,35 @@ import Data.Attoparsec.ByteString.Char8
 type Hostname = ByteString
 type Name     = ByteString
 type Cmd      = ByteString
+type NumCmd   = Int
 type Param    = ByteString
 
-data Origin = Host Hostname
-            | Nickname Name (Maybe Hostname)
-            deriving (Show, Eq)
 
-data Message = Message 
-  { origin :: Maybe Origin
-  , cmd    :: Cmd
-  , params :: [Param] }
+
+
+data Host = Host Hostname
+data Nickname = Nickname Name (Maybe Hostname)
+
+data Message = PingMsg ByteString
+             | ChannelMsg Channel Nickname [Param]
+             | PrivMsg Nickname [Param]
+             | NoticeMsg Nickname [Param]
+             | NumMsg Host NumCmd [Param]
+             | Message
+                { msgOrigin :: Maybe (Either Host Nickname)
+                , msgCommand   :: Cmd
+                , msgParams :: [Param] }
+
+toGenericMessage :: Message -> Message
+toGenericMessage (Message Nothing "PING" (x:_)) = PingMsg x
+toGenericMessage (Message (Just (Left user)) "PRIVMSG" ((chan@'#':_):params) = ChannelMsg chan user params
+toGenericMessage (Message (Just (Left user)) "PRIVMSG" (_:params)) = PrivMsg user params
+
+toGenericMessage (Message (Just (Right host)) num params) = NumMsg host cmd
+
+
+fromGenericMessage :: Message -> Maybe Message
+
 
 
 instance Show Message where
@@ -66,8 +85,8 @@ bang = void $ char '!'
 ws :: Parser ()
 ws = void $ char ' '
 
-newline :: Parser ()
-newline = void $ char '\n'
+le :: Parser ()
+le = void $ char '\r'
 
 parseOrigin :: Parser (Maybe Origin)
 parseOrigin = option Nothing $ Just <$> (try parseNickname <|> parseHost)
@@ -87,10 +106,10 @@ parseCommand :: Parser ByteString
 parseCommand = (takeWhile1 isUpper <|> takeWhile1 isDigit) <* ws
 
 parseParams :: Parser [ByteString]
-parseParams = many1 (end <|> str) <* char '\r'
+parseParams = many (end <|> str)
     where
-        end = colon *> takeWhile (/= '\r')
-        str = takeWhile isOk <* ws
+        end = colon *> takeWhile (/= '\r') <* le
+        str = takeWhile isOk <* (ws <|> le)
         
         isOk '\n' = False
         isOk '\r' = False

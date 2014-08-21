@@ -7,7 +7,10 @@ module Network.IRC.Command
   , showCommand
   , commandDestination
   , raw
-  , join
+  , pong
+  , joinChannel
+  , setNickname
+  , setUsername
   , putChannel
   ) where
 
@@ -32,13 +35,21 @@ showCommand (Command _ cmd params trail) = cmd `append` " " `append` unwords par
 commandDestination :: Command -> Server
 commandDestination (Command server _ _ _) = server
 
+setNickname :: Server -> Name -> Command
+setNickname server name = Command server "NICK" [name] Nothing
+
+setUsername :: Server -> Name -> Name -> Command
+setUsername server name0 name1 = Command server "USER" [name0, "0", "*"] (Just name1)
+
 
 raw :: Server -> Cmd -> [Param]-> Maybe Param -> Command
 raw = Command
 
+pong :: Server -> ByteString -> Command
+pong server stamp = Command server "PONG" [] (Just stamp)
 
-join :: Server -> Channel -> Command
-join server channel = raw server "JOIN" [channel] Nothing
+joinChannel :: Server -> Channel -> Command
+joinChannel server channel = raw server "JOIN" [channel] Nothing
 
 putChannel :: Server -> Channel -> ByteString -> Command
 putChannel server channel msg = raw server "PRIVMSG" [channel] (Just msg)

@@ -1,11 +1,16 @@
 {-# LANGUAGE OverloadedStrings #-}
+
+import Prelude hiding (unwords, words, writeFile)
 import Control.Monad.IO.Class
 import Control.Monad
 import Network.URI
-import Data.ByteString.Char8 hiding (putStrLn)
+import Network.HTTP.Conduit hiding (host, port)
+import Data.ByteString.Char8 hiding (putStrLn, reverse, concatMap)
+import qualified Data.ByteString.Lazy as BL
 import Network.IRC
 import Network.IRC.Command
 import Network.IRC.Message
+
 
 import Data.Conduit
 import qualified Data.Conduit.List as CL
@@ -31,7 +36,7 @@ freenode = IrcServerSettings
 quakenet = IrcServerSettings
     { host     = "irc.quakenet.org"
     , port     = 6667
-    , channels = ["#felixsch"]
+    , channels = ["#felixsch", "#hacky.v2"]
     , nick     = ircNick
     , altNick  = ircAltNick
     , realName = ircRealname }
@@ -42,83 +47,53 @@ myConfig = IrcConfig
   , verbose = True
   }
 
-
+myActions = felixsch >> kittens
 
 main :: IO ()
 main = do
-    error <- runIRC myConfig
+    error <- runIRC myConfig myActions
     case error of
         Just err -> putStrLn $ show err
         Nothing  -> putStrLn "bye"
 
+felixsch :: Action ()
+felixsch = onChannel "#felixsch" $ \params ->
+    say "#felixsch" $ "You said: " `append` unwords params
+    
+kittens :: Action ()
+kittens = onPrivMsg $ \dest txt -> do
+    forM_ (concatMap words txt) $ \word -> whenURI word $ do
+        case isSupported word of
+            Just ty  -> checkImage dest word ty
+            otherwise -> return ()
 
-
-{-
-logIRC :: (MonadIO m) => IRCConduit m
-logIRC = awaitForever handleIRC
-    where
-      handleIRC s@(Left msg) = (liftIO $ print msg)
-      handleIRC s@(Right c) = (liftIO $ putStrLn $ "> " ++ show c) >> yield s
-
-
-onPing :: (MonadIO m) => IRCConduit m
-onPing = onAction "PING" $ do
-    msg <- await
-    case msg of
-      Just m -> pong m
-      Nothing -> return ()
-    where
-     pong (Left (Message _ _ (x:_))) = send $ raw "PONG" [':' `T.cons` x] Nothing
-     pong x                           = return ()
-
-
-onFelixsch :: (MonadIO m) => IRCConduit m
-onFelixsch = do
-    msg <- await
-    case msg of
-        Just (Left (Message _ _ pa)) -> send $ raw "PRIVMSG" ["#felixsch"] (Just $ "echo: " `T.append` getMsg pa)
-        otherwise                    -> return ()
-    where
-      getMsg [] = T.empty
-      getMsg x  = last x
-
-theKitten :: (MonadIO m) => IRCConduit m
-theKitten = onAction "PRIVMSG" $ awaitForever $ manageKittens
-    where
-        manageKittens m@(Left (Message _ _ (chan:txt))) = mapM_ (handleParam m chan) txt    
-        manageKittens x = yield x
-
-        handleParam m chan txt = forM_ (T.words txt) $ \msg -> whenURI msg $ do
-                case isSupported msg of
-                    Just ty   -> checkImage chan ty msg >> yield m
-                    otherwise -> yield m
-
-whenURI :: (MonadIO m) => T.Text -> (m ()) -> m ()
+whenURI :: (MonadIO m) => ByteString -> (m ()) -> m ()
 whenURI text cb = do
-    if isURI $ T.unpack text
+    if isURI $ unpack text
         then cb
         else return ()
 
 tmpImage = "/tmp/ircbot-catscanner"
 model    = "/mnt/files/git/ircbot/cat.xml"
 
-checkImage :: (MonadIO m) => Channel -> String -> T.Text -> IRCConduit m
-checkImage chan ty imageURL = do
-    image <- liftIO $ simpleHttp $ T.unpack imageURL
-    liftIO $ B.writeFile tmp image
+checkImage :: ByteString -> ByteString -> String -> Action ()
+checkImage dest url ty = do
+    image <- liftIO $ simpleHttp $ unpack url
+    liftIO $ BL.writeFile tmp image
 
     isACat <- liftIO $ detectCat tmp model (-0.4) 4
 
     if isACat
-        then send $ putChannel chan "Hurray a cute kitten..."
+        then say dest "Hurray a cute kitten..."
         else return ()
     where
         tmp = tmpImage ++ "." ++ ty
 
 
-isSupported :: T.Text -> Maybe String
-isSupported = isSup . reverse . T.unpack
+isSupported :: ByteString -> Maybe String
+isSupported = isSup . reverse . unpack
     where
         isSup ('g':'p':'j':_) = Just "jpg"
         isSup ('g':'n':'p':_) = Just "png"
-        isSup _               = Nothing -}
+        isSup ('g':'e':'p':'j':_) = Just "jpeg"
+        isSup _               = Nothing

@@ -11,6 +11,8 @@ module Network.IRC
   , IrcState(..)
   , IrcStateRef
   , Irc(..)
+  , Action(..)
+  , say
   , askRef
   , Name
   , Hostname
@@ -18,7 +20,12 @@ module Network.IRC
   , Cmd
   , Param
   , runIRC
+  , onChannel
+  , onPrivMsg
   ) where
+
+import Prelude hiding (unwords)
+
 
 import Control.Applicative
 import Control.Monad
@@ -108,7 +115,6 @@ instance MonadBaseControl IO Irc where
 fork :: MonadBaseControl IO Irc => Irc () -> Irc ThreadId
 fork = liftBaseDiscard forkIO
 
-
 instance Applicative Irc where
     pure = return
     (<*>) = ap
@@ -157,43 +163,110 @@ mkIrcState = do
         , logHdl      = Nothing
         }
 
-runIRC :: IrcConfig -> IO (Maybe IrcError)
-runIRC config = do
+runIRC :: IrcConfig -> Action () -> IO (Maybe IrcError)
+runIRC config actions = do
     emptyState <- mkIrcState
-    result <- runIrc' config emptyState setup
+    result <- runIrc' config emptyState (run actions)
     forever $ liftIO $ threadDelay 100000
     return $ case result of
         Left x   -> Just x
         Right _  -> Nothing
 
 
-setup :: Irc ()
-setup = do
+type Action a = StateT (Server,Message) Irc a
+
+runAction :: Server -> Message -> Action () -> Irc ()
+runAction server message action = void $ runStateT action (server, message)
+
+onChannel :: Channel -> ([Param] -> Action ()) -> Action ()
+onChannel channel cmd = checkIfChannel =<< get
+    where
+    checkIfChannel (server, msg@(Message _ "PRIVMSG" (x:xs)))
+        | channel == x = cmd xs
+        | otherwise    = return ()
+    checkIfChannel _  = return ()
+
+onPrivMsg :: (ByteString -> [Param] -> Action ()) -> Action ()
+onPrivMsg action = do
+    msg <- snd <$> get
+    when (isCommand "PRIVMSG" msg) $ setupAction msg
+    where
+        setupAction msg@(Message _ _ (x:xs)) = action x xs
+        
+
+isCommand :: Cmd -> Message -> Bool
+isCommand cmd (Message _ cmd' _)
+    | cmd == cmd' = True
+    | otherwise   = False
+
+say :: Channel -> ByteString -> Action ()
+say channel msg = do
+    server <- fst <$> get
+    lift $ send $ putChannel server channel msg
+
+
+
+
+run :: Action () -> Irc ()
+run actions = do
     config <- askConfig
     cons <- mapM connectToIrc $ servers config
     modify (\conf -> conf { connections = cons })
 
+    forM_ cons $ \(server,_) -> void . fork $ signOn server
+
     forM_ cons $ \(server,(hdl,_)) -> void . fork . forever $ do
         line <- liftIO $ hGetLine hdl
         case parseMessage line of
-            Just msg -> void $ fork (handleMessage server msg)
-            Nothing  -> do
-                ircLog Nothing $ "Mailformed message: " ++ (show $ unpack line)
-                throwError $ MailformedMessage (show $ unpack $ line)
+            Just msg -> void $ fork (handleMessage server msg actions)
+            Nothing  -> ircLog Nothing $ "Warning: Malformed message: " ++ (show $ unpack line)
 
-handleMessage :: Server -> Message -> Irc ()
-handleMessage server msg = ircLog (Just $ unpack server) (unpack $ showMessage msg) 
+handleMessage :: Server -> Message -> Action () -> Irc ()
+handleMessage server msg actions = do
+    ircLog (Just $ unpack server) (unpack $ showMessage msg)
+    when (cmd msg == "PING") (send $ pong server (unwords $ params msg))
+    runAction server msg actions
 
 send :: Command -> Irc ()
 send cmd = do
     cons <- connections <$> get
-    case lookup (commandDestination cmd) cons of
-        Just (_,send) -> send $ showCommand cmd
+    case lookup server cons of
+        Just (_,send) -> do
+            ircLog (Just $ unpack server) $ "> " ++ show cmd
+            send $ showCommand cmd `append` "\r\n"
         Nothing   -> throwError (UnknownServer $ commandDestination cmd)
+    where
+        server = commandDestination cmd
 
 
-signOn :: Irc ()
-signOn = undefined
+signOn :: Server -> Irc ()
+signOn server = do
+    config <- getServerConfig
+    liftIO $ threadDelay 2000000
+    ircLog (Just $ unpack server) "Setup nickname..."
+    send $ setNickname server (nick config)
+
+    ircLog (Just $ unpack server) "Setup alternative nickname / realname..."
+    send $ setUsername server (altNick config) (realName config)
+    liftIO $ threadDelay 2000000
+
+    ircLog (Just $ unpack server) "Joining channels..."
+    mapM_ (send . joinChannel server) (channels config)
+ 
+
+    where
+        getServerConfig = do 
+            conf <- findServer . servers <$> askConfig
+            case conf of
+                Just x  -> return x
+                Nothing -> throwError $ IrcError "Unvalid server settings. Server config not found"
+ 
+        findServer (x:xs)
+            | (pack $ host x) == server = Just x
+            | otherwise                 = findServer xs
+        findServer []     = Nothing
+
+
     
 
 sendIrc :: Handle -> ByteString -> Irc ()
