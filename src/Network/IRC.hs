@@ -180,7 +180,10 @@ runAction server message action = void $ runStateT action (server, message)
 
 onChannel :: Channel -> ([Param] -> Action ()) -> Action ()
 onChannel channel cmd = checkIfChannel =<< get
-    where
+  where
+    checkIfChannel (server, (ChannelMsg chan _ params)) 
+        | channel == chan = cmd params
+        | otherwise = return ()
     checkIfChannel (server, msg@(Message _ "PRIVMSG" (x:xs)))
         | channel == x = cmd xs
         | otherwise    = return ()
@@ -188,7 +191,7 @@ onChannel channel cmd = checkIfChannel =<< get
 
 onPrivMsg :: (ByteString -> [Param] -> Action ()) -> Action ()
 onPrivMsg action = do
-    msg <- snd <$> get
+    msg <- toGenericMessage . snd <$> get
     when (isCommand "PRIVMSG" msg) $ setupAction msg
     where
         setupAction msg@(Message _ _ (x:xs)) = action x xs
@@ -221,10 +224,14 @@ run actions = do
             Just msg -> void $ fork (handleMessage server msg actions)
             Nothing  -> ircLog Nothing $ "Warning: Malformed message: " ++ (show $ unpack line)
 
+sendPong :: Server -> Message -> Irc ()
+sendPong server (PingMsg msg) = send $ pong server msg
+sendPong _ _          = return ()
+
 handleMessage :: Server -> Message -> Action () -> Irc ()
 handleMessage server msg actions = do
     ircLog (Just $ unpack server) (unpack $ showMessage msg)
-    when (cmd msg == "PING") (send $ pong server (unwords $ params msg))
+    when (isPingMsg msg) $ sendPong server msg
     runAction server msg actions
 
 send :: Command -> Irc ()
