@@ -36,7 +36,7 @@ freenode = IrcServerSettings
 quakenet = IrcServerSettings
     { host     = "irc.quakenet.org"
     , port     = 6667
-    , channels = ["#felixsch", "#hacky.v2"]
+    , channels = ["#felixsch"]
     , nick     = ircNick
     , altNick  = ircAltNick
     , realName = ircRealname }
@@ -56,11 +56,11 @@ main = do
         Just err -> putStrLn $ show err
         Nothing  -> putStrLn "bye"
 
-felixsch :: Action ()
+felixsch :: Action IO ()
 felixsch = onChannel "#felixsch" $ \params ->
     say "#felixsch" $ "You said: " `append` unwords params
     
-kittens :: Action ()
+kittens :: Action IO ()
 kittens = onPrivMsg $ \dest txt -> do
     forM_ (concatMap words txt) $ \word -> whenURI word $ do
         case isSupported word of
@@ -76,7 +76,7 @@ whenURI text cb = do
 tmpImage = "/tmp/ircbot-catscanner"
 model    = "/mnt/files/git/ircbot/cat.xml"
 
-checkImage :: ByteString -> ByteString -> String -> Action ()
+checkImage :: ByteString -> ByteString -> String -> Action IO ()
 checkImage dest url ty = do
     image <- liftIO $ simpleHttp $ unpack url
     liftIO $ BL.writeFile tmp image

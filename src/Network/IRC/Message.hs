@@ -30,30 +30,14 @@ type NumCmd   = Int
 type Param    = ByteString
 
 
+data Origin = Host Hostname
+            | Nickname Name (Maybe Hostname)
 
+data Message = Message
+  { msgOrigin :: Maybe Origin
+  , msgCommand   :: Cmd
+  , msgParams :: [Param] }
 
-data Host = Host Hostname
-data Nickname = Nickname Name (Maybe Hostname)
-
-data Message = PingMsg ByteString
-             | ChannelMsg Channel Nickname [Param]
-             | PrivMsg Nickname [Param]
-             | NoticeMsg Nickname [Param]
-             | NumMsg Host NumCmd [Param]
-             | Message
-                { msgOrigin :: Maybe (Either Host Nickname)
-                , msgCommand   :: Cmd
-                , msgParams :: [Param] }
-
-toGenericMessage :: Message -> Message
-toGenericMessage (Message Nothing "PING" (x:_)) = PingMsg x
-toGenericMessage (Message (Just (Left user)) "PRIVMSG" ((chan@'#':_):params) = ChannelMsg chan user params
-toGenericMessage (Message (Just (Left user)) "PRIVMSG" (_:params)) = PrivMsg user params
-
-toGenericMessage (Message (Just (Right host)) num params) = NumMsg host cmd
-
-
-fromGenericMessage :: Message -> Maybe Message
 
 
 
@@ -61,7 +45,7 @@ instance Show Message where
     show = unpack . showMessage
 
 showMessage :: Message -> ByteString
-showMessage msg = prefix (origin msg) `append` unwords (cmd msg : params msg)
+showMessage msg = prefix (msgOrigin msg) `append` unwords (msgCommand msg : msgParams msg)
     where
         prefix (Just (Host a))            = ':' `cons` a `append` " "
         prefix (Just (Nickname n (Just h))) = ':' `cons` n `append` "!~" `append` h `append` " "
