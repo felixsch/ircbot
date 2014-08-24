@@ -1,7 +1,10 @@
 {-# LANGUAGE OverloadedStrings #-}
-
+{-# LANGUAGE FlexibleInstances #-}
 import Prelude hiding (unwords, words, writeFile)
+import Control.Applicative
 import Control.Monad.IO.Class
+import Control.Monad.State
+import Control.Monad.Base
 import Control.Monad
 import Network.URI
 import Network.HTTP.Conduit hiding (host, port)
@@ -10,6 +13,8 @@ import qualified Data.ByteString.Lazy as BL
 import Network.IRC
 import Network.IRC.Command
 import Network.IRC.Message
+
+
 
 
 import Data.Conduit
@@ -49,9 +54,54 @@ myConfig = IrcConfig
 
 myActions = felixsch >> kittens
 
+
+data JData = JData 
+  { lastSentence :: ByteString
+  }
+
+mkJData :: JData
+mkJData = JData {
+    lastSentence = "blll"
+}
+
+
+instance MonadIrc (StateT JData IO)
+
+
+
+lastS :: Action (StateT JData IO) ()
+lastS = onPrivMsg checkTrigger
+    where
+        checkTrigger dest (x:xs)
+          | x == "!last" = showLast dest
+          | otherwise    = saveLast $ x:xs
+
+        showLast dest    = do        
+            state <- liftAction get 
+            say dest $ "Last sentence recorded: " `append` lastSentence state
+
+        saveLast params  = do
+            state <- liftAction get
+            liftBase $ ircLog Nothing $ "params are: " ++ unpack (intercalate ", " params)
+            liftAction $ put (state { lastSentence = unwords params })
+            state2 <- liftAction get
+            liftBase $ ircLog Nothing $ "params are: " ++ unpack (lastSentence state2)
+
+paramTest :: Action (StateT JData IO) ()
+paramTest = whenTrigger "!params" $ \dest params ->
+    say dest $ "Params where: " `append` intercalate ", " params
+
+
+runJbot :: IO (Maybe IrcError)
+runJbot = evalStateT (runIRC myConfig actions) mkJData
+    where
+        actions = lastS >> paramTest
+    
+
+
 main :: IO ()
 main = do
-    error <- runIRC myConfig myActions
+    error <- runJbot
     case error of
         Just err -> putStrLn $ show err
         Nothing  -> putStrLn "bye"

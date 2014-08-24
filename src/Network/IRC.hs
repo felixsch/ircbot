@@ -11,7 +11,9 @@ module Network.IRC
   , IrcState(..)
   , IrcStateRef
   , IrcT(..)
+  , MonadIrc(..)
   , Action(..)
+  , liftAction
   , say
   , askRef
   , Name
@@ -22,6 +24,8 @@ module Network.IRC
   , runIRC
   , onChannel
   , onPrivMsg
+  , ircLog
+  , whenTrigger
   ) where
 
 import Prelude hiding (unwords)
@@ -178,14 +182,31 @@ runIRC config actions = do
         Left x   -> Just x
         Right _  -> Nothing
 
+newtype Action m a = Action (ReaderT (Server,Message) (IrcT m) a)
+    deriving (Functor, Monad, MonadIO, MonadReader (Server,Message))
 
-type Action m a = StateT (Server,Message) (IrcT m) a
+instance MonadTrans Action where
+    lift = Action . lift . lift
+
+instance (MonadIrc m) => Applicative (Action m) where
+    pure = return
+    (<*>) = ap
+
+
+instance (MonadIrc m) => MonadBase (IrcT m) (Action m) where
+    liftBase = Action . lift
+
+
+--type Action m a = StateT (Server,Message) (IrcT m) a
+
+liftAction :: (MonadIrc m) => m a -> Action m a
+liftAction = Action . lift . lift
 
 runAction :: (MonadIrc m) => Server -> Message -> Action m () -> IrcT m ()
-runAction server message action = void $ runStateT action (server, message)
+runAction server message (Action action) = void $ runReaderT action (server, message)
 
 onChannel :: (MonadIrc m) => Channel -> ([Param] -> Action m ()) -> Action m ()
-onChannel channel cmd = checkIfChannel =<< get
+onChannel channel cmd = checkIfChannel =<< ask
     where
     checkIfChannel (server, msg@(Message _ "PRIVMSG" (x:xs)))
         | channel == x = cmd xs
@@ -194,21 +215,31 @@ onChannel channel cmd = checkIfChannel =<< get
 
 onPrivMsg :: (MonadIrc m) => (ByteString -> [Param] -> Action m ()) -> Action m ()
 onPrivMsg action = do
-    msg <- snd <$> get
+    msg <- snd <$> ask
     when (isCommand "PRIVMSG" msg) $ setupAction msg
     where
         setupAction msg@(Message _ _ (x:xs)) = action x xs
-        
+    
+
+whenTrigger :: (MonadIrc m) => ByteString -> (ByteString -> [Param] -> Action m ()) -> Action m ()
+whenTrigger trigger cmd = onPrivMsg checkTrigger
+    where
+        checkTrigger dest (x:params)
+          | x == trigger  = cmd dest params
+          | otherwise     = return ()
 
 isCommand :: Cmd -> Message -> Bool
 isCommand cmd (Message _ cmd' _)
     | cmd == cmd' = True
     | otherwise   = False
 
+lifts :: (MonadIrc m) => IrcT m a -> Action m a
+lifts = liftBase
+
 say :: (MonadIrc m) => Channel -> ByteString -> Action m ()
 say channel msg = do
-    server <- fst <$> get
-    lift $ send $ putChannel server channel msg
+    server <- fst <$> ask
+    liftBase $ send $ putChannel server channel msg
 
 
 

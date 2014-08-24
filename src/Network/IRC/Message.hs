@@ -11,7 +11,7 @@ module Network.IRC.Message
   , parseMessage
   ) where
 
-import Prelude hiding (takeWhile, unwords)
+import Prelude hiding (takeWhile, unwords, words)
 
 import Control.Monad
 import Control.Monad.IO.Class
@@ -19,7 +19,7 @@ import Control.Monad.IO.Class
 import Control.Applicative hiding (empty)
 
 import Data.Char (isUpper)
-import Data.ByteString.Char8 hiding (takeWhile, elem)
+import Data.ByteString.Char8 hiding (takeWhile, elem, concatMap)
 import Data.Attoparsec.ByteString.Char8
 
 
@@ -42,7 +42,7 @@ data Message = Message
 
 
 instance Show Message where
-    show = unpack . showMessage
+    show msg = unpack $ intercalate "," $ msgParams msg
 
 showMessage :: Message -> ByteString
 showMessage msg = prefix (msgOrigin msg) `append` unwords (msgCommand msg : msgParams msg)
@@ -56,9 +56,10 @@ showMessage msg = prefix (msgOrigin msg) `append` unwords (msgCommand msg : msgP
 parseMessage :: ByteString -> Maybe Message
 parseMessage = fromEither . parseOnly parser
     where
-        parser = Message <$> parseOrigin <*> parseCommand <*> parseParams
+        parser = Message <$> parseOrigin <*> parseCommand <*> (toWords <$> parseParams)
         fromEither (Left _)    = Nothing
         fromEither (Right msg) = Just msg
+        toWords = concatMap words
 
 colon :: Parser Char
 colon = char ':'
