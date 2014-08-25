@@ -13,7 +13,7 @@ module Network.IRC
   , IrcT(..)
   , MonadIrc(..)
   , Action(..)
-  , liftAction
+  , irc
   , say
   , askRef
   , Name
@@ -34,12 +34,13 @@ import Prelude hiding (unwords)
 import Control.Applicative
 import Control.Monad
 import Control.Monad.Base
-import Control.Monad.Error
 import Control.Monad.Reader
+import Control.Monad.Except
 import Control.Monad.State
 import Control.Monad.STM
 import Control.Monad.Catch
 import Control.Monad.Trans.Control
+import Control.Monad.Trans.Except
 
 import Control.Concurrent
 import Control.Concurrent.STM.TVar
@@ -70,10 +71,6 @@ instance Show IrcError where
 
 
 
-instance Error IrcError where
-    noMsg = IrcError "Unkown Error occured"
-    strMsg = IrcError
-
 
 data IrcServerSettings = IrcServerSettings
   { host     :: String
@@ -92,6 +89,7 @@ data IrcConfig = IrcConfig
 data IrcState = IrcState
   { connections :: [(Server, Handle)]
   , logHdl      :: Maybe Handle
+  , test        :: ByteString
   }
 
 type IrcStateRef = TVar IrcState
@@ -101,7 +99,7 @@ type IrcRuntime = (IrcConfig, IrcStateRef)
 
 
 
-newtype IrcT m a = IrcT { runIrcT :: ReaderT IrcRuntime (ErrorT IrcError m) a }
+newtype IrcT m a = IrcT { runIrcT :: ReaderT IrcRuntime (ExceptT IrcError m) a }
     deriving (Functor, Monad, MonadIO, MonadReader IrcRuntime, MonadError IrcError)
 
 class (Functor m, Monad m, MonadIO m, MonadBaseControl IO m) => MonadIrc m 
@@ -117,7 +115,7 @@ instance (MonadIrc m) => MonadBase IO (IrcT m) where
 
 
 instance (MonadIrc m) => MonadBaseControl IO (IrcT m) where
-    newtype StM (IrcT m) a = StIrcT { unStIrc :: StM (ReaderT IrcRuntime (ErrorT IrcError m)) a}
+    newtype StM (IrcT m) a = StIrcT { unStIrc :: StM (ReaderT IrcRuntime (ExceptT IrcError m)) a}
 
     liftBaseWith f = IrcT (liftBaseWith (\runInM -> f (fmap StIrcT . runInM . runIrcT)))
     restoreM = IrcT . restoreM . unStIrc
@@ -163,7 +161,7 @@ instance (MonadIrc m) => MonadState IrcState (IrcT m) where
 
 
 runIrc' :: IrcConfig -> IrcStateRef -> IrcT m a -> m (Either IrcError a)
-runIrc' config stateRef (IrcT a) = runErrorT $ runReaderT a (config,stateRef)
+runIrc' config stateRef (IrcT a) = runExceptT $ runReaderT a (config,stateRef)
 
 
 mkIrcState :: (MonadIrc m) => m IrcStateRef
@@ -171,6 +169,7 @@ mkIrcState = liftIO $
     atomically $ newTVar IrcState
         { connections = []
         , logHdl      = Nothing
+        , test        = "moep"
         }
 
 runIRC :: (MonadIrc m) => IrcConfig -> Action m () -> m (Maybe IrcError)
@@ -196,14 +195,11 @@ instance (MonadIrc m) => Applicative (Action m) where
 instance (MonadIrc m) => MonadBase (IrcT m) (Action m) where
     liftBase = Action . lift
 
-
---type Action m a = StateT (Server,Message) (IrcT m) a
-
-liftAction :: (MonadIrc m) => m a -> Action m a
-liftAction = Action . lift . lift
+irc :: (MonadIrc m) => IrcT m a -> Action m a
+irc = liftBase
 
 runAction :: (MonadIrc m) => Server -> Message -> Action m () -> IrcT m ()
-runAction server message (Action action) = void $ runReaderT action (server, message)
+runAction server message (Action action) = runReaderT action (server, message)
 
 onChannel :: (MonadIrc m) => Channel -> ([Param] -> Action m ()) -> Action m ()
 onChannel channel cmd = checkIfChannel =<< ask
@@ -255,14 +251,18 @@ run actions = do
     forM_ cons $ \(server,hdl) -> void . fork . forever $ do
         line <- liftIO $ hGetLine hdl
         case parseMessage line of
-            Just msg -> void $ fork (handleMessage server msg actions)
+            Just msg -> handleMessage server msg actions
             Nothing  -> ircLog Nothing $ "Warning: Malformed message: " ++ (show $ unpack line)
+    modify (\state -> state { test = "hurray" })
+
+getHurray :: (MonadIrc m) => IrcT m ByteString
+getHurray = test <$> get
 
 handleMessage :: (MonadIrc m ) => Server -> Message -> Action m () -> IrcT m ()
 handleMessage server msg actions = do
     ircLog (Just $ unpack server) (unpack $ showMessage msg)
     when (msgCommand msg == "PING") (send $ pong server (unwords $ msgParams msg))
-    runAction server msg actions
+    void $ fork $ runAction server msg actions
 
 send :: (MonadIrc m) => Command -> IrcT m ()
 send cmd = do

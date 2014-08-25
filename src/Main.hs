@@ -52,16 +52,17 @@ myConfig = IrcConfig
   , verbose = True
   }
 
-myActions = felixsch >> kittens
-
-
 data JData = JData 
   { lastSentence :: ByteString
+  , kittensFound :: Int
+  , images       :: [ByteString]
   }
 
 mkJData :: JData
-mkJData = JData {
-    lastSentence = "blll"
+mkJData = JData
+  { lastSentence = "blll"
+  , kittensFound = 0
+  , images       = []
 }
 
 
@@ -77,15 +78,15 @@ lastS = onPrivMsg checkTrigger
           | otherwise    = saveLast $ x:xs
 
         showLast dest    = do        
-            state <- liftAction get 
+            state <- lift get 
             say dest $ "Last sentence recorded: " `append` lastSentence state
 
         saveLast params  = do
-            state <- liftAction get
-            liftBase $ ircLog Nothing $ "params are: " ++ unpack (intercalate ", " params)
-            liftAction $ put (state { lastSentence = unwords params })
-            state2 <- liftAction get
-            liftBase $ ircLog Nothing $ "params are: " ++ unpack (lastSentence state2)
+            state <- lift get
+            irc $ ircLog Nothing $ "params are: " ++ unpack (intercalate ", " params)
+            lift $ put (state { lastSentence = unwords params })
+            state2 <- lift get
+            irc $ ircLog Nothing $ "params are: " ++ unpack (lastSentence state2)
 
 paramTest :: Action (StateT JData IO) ()
 paramTest = whenTrigger "!params" $ \dest params ->
@@ -93,11 +94,16 @@ paramTest = whenTrigger "!params" $ \dest params ->
 
 
 runJbot :: IO (Maybe IrcError)
-runJbot = evalStateT (runIRC myConfig actions) mkJData
+runJbot = from <$> (runStateT (runIRC myConfig actions) mkJData)
     where
-        actions = lastS >> paramTest
+        actions = lastS >> paramTest >> kittens >> kittenStats >> hurray
+        from (x, _) = x
     
 
+hurray :: Action (StateT JData IO) ()
+hurray = whenTrigger "!hurray" $ \dest _ -> do
+    hur <- test <$> (irc $ get)
+    say dest $ "Hurray: " `append` hur
 
 main :: IO ()
 main = do
@@ -106,11 +112,8 @@ main = do
         Just err -> putStrLn $ show err
         Nothing  -> putStrLn "bye"
 
-felixsch :: Action IO ()
-felixsch = onChannel "#felixsch" $ \params ->
-    say "#felixsch" $ "You said: " `append` unwords params
     
-kittens :: Action IO ()
+kittens :: Action (StateT JData IO) ()
 kittens = onPrivMsg $ \dest txt -> do
     forM_ (concatMap words txt) $ \word -> whenURI word $ do
         case isSupported word of
@@ -126,15 +129,29 @@ whenURI text cb = do
 tmpImage = "/tmp/ircbot-catscanner"
 model    = "/mnt/files/git/ircbot/cat.xml"
 
-checkImage :: ByteString -> ByteString -> String -> Action IO ()
+kittenStats :: Action (StateT JData IO) ()
+kittenStats = whenTrigger "!kittens" $ \dest params -> do
+    dat <- lift $ get
+    say dest $ "Kittens found : " `append` (pack $ show $ kittensFound dat)
+    say dest $ "total images  : " `append` (pack $ show $ Prelude.length $ images dat)
+    say dest $ "last 5 images :"
+    forM_ (Prelude.take 5 $ images dat) $ \url ->
+        say dest $ "  - " `append` url
+    
+
+checkImage :: ByteString -> ByteString -> String -> Action (StateT JData IO) ()
 checkImage dest url ty = do
     image <- liftIO $ simpleHttp $ unpack url
     liftIO $ BL.writeFile tmp image
 
+    
+    lift $ modify (\dat -> dat { images = url : images dat })
     isACat <- liftIO $ detectCat tmp model (-0.4) 4
 
     if isACat
-        then say dest "Hurray a cute kitten..."
+        then do
+            say dest "Hurray a cute kitten..."
+            lift $ modify (\dat -> dat { kittensFound = kittensFound dat + 1 })
         else return ()
     where
         tmp = tmpImage ++ "." ++ ty
