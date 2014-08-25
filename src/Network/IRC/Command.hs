@@ -1,58 +1,70 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Network.IRC.Command
-  ( Command(..)
+  ( Cmd(..)
   , Channel
   , Server
-  , showCommand
-  , commandDestination
+  , showCmd
+  , cmdDestination
   , raw
-  , pong
-  , joinChannel
+  , mkPong
+  , mkJoin
+  , mkPut
+  , mkNotice
+  , mkMe
   , setNickname
   , setUsername
-  , putChannel
   ) where
 
 import Prelude hiding (unwords)
 
-import Data.ByteString.Char8
+import qualified Data.ByteString.Char8 as B
 import Data.Maybe
 
 import Network.IRC.Message
 
-type Channel = ByteString
-type Server  = ByteString
-
-data Command = Command Server Cmd [Param] (Maybe Param)
-
-instance Show Command where
-    show = unpack . showCommand
-
-showCommand :: Command -> ByteString
-showCommand (Command _ cmd params trail) = cmd `append` " " `append` unwords params `append` " " `append` maybe empty (cons ':') trail
-
-commandDestination :: Command -> Server
-commandDestination (Command server _ _ _) = server
-
-setNickname :: Server -> Name -> Command
-setNickname server name = Command server "NICK" [name] Nothing
-
-setUsername :: Server -> Name -> Name -> Command
-setUsername server name0 name1 = Command server "USER" [name0, "0", "*"] (Just name1)
+type Destination = B.ByteString
+type Channel = B.ByteString
+type Server  = B.ByteString
 
 
-raw :: Server -> Cmd -> [Param]-> Maybe Param -> Command
-raw = Command
 
-pong :: Server -> ByteString -> Command
-pong server stamp = Command server "PONG" [] (Just stamp)
+data Cmd = Cmd Server B.ByteString [Param] (Maybe Param)
 
-joinChannel :: Server -> Channel -> Command
-joinChannel server channel = raw server "JOIN" [channel] Nothing
+instance Show Cmd where
+    show = B.unpack . showCmd
 
-putChannel :: Server -> Channel -> ByteString -> Command
-putChannel server channel msg = raw server "PRIVMSG" [channel] (Just msg)
+showCmd :: Cmd -> B.ByteString
+showCmd (Cmd _ cmd params trail) = cmd `B.append` " " `B.append` B.unwords params `B.append` " " `B.append` maybe B.empty (B.cons ':') trail
+
+cmdDestination :: Cmd -> Server
+cmdDestination (Cmd server _ _ _) = server
+
+setNickname :: Server -> Name -> Cmd
+setNickname server name = Cmd server "NICK" [name] Nothing
+
+setUsername :: Server -> Name -> Name -> Cmd
+setUsername server name0 name1 = Cmd server "USER" [name0, "0", "*"] (Just name1)
+
+
+raw :: Server -> B.ByteString -> [Param]-> Maybe Param -> Cmd
+raw = Cmd
+
+mkPong :: Server -> B.ByteString -> Cmd
+mkPong server stamp = Cmd server "PONG" [] (Just stamp)
+
+mkJoin :: Server -> Channel -> Cmd
+mkJoin server channel = raw server "JOIN" [channel] Nothing
+
+mkPut :: Server -> Destination -> B.ByteString -> Cmd
+mkPut server channel msg = raw server "PRIVMSG" [channel] (Just msg)
+
+mkNotice :: Server -> Name -> B.ByteString -> Cmd
+mkNotice server nick msg = raw server "NOTICE" (nick : [msg]) Nothing
+
+mkMe :: Server -> Destination -> B.ByteString -> Cmd
+mkMe server dest msg = raw server ('\x01' `B.cons` "ACTION") [msg, "\x01"] Nothing
+
 
 
 

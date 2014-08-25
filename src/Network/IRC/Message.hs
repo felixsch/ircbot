@@ -5,7 +5,6 @@ module Network.IRC.Message
   , Message(..)
   , Hostname
   , Name
-  , Cmd
   , Param
   , showMessage
   , parseMessage
@@ -25,7 +24,6 @@ import Data.Attoparsec.ByteString.Char8
 
 type Hostname = ByteString
 type Name     = ByteString
-type Cmd      = ByteString
 type NumCmd   = Int
 type Param    = ByteString
 
@@ -35,7 +33,7 @@ data Origin = Host Hostname
 
 data Message = Message
   { msgOrigin :: Maybe Origin
-  , msgCommand   :: Cmd
+  , msgCommand   :: ByteString
   , msgParams :: [Param] }
 
 
