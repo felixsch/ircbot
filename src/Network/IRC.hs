@@ -18,6 +18,7 @@ module Network.IRC
   , cleanup
   , send
   , logMessage
+  , defaultIrcLogger
   , current
   , runAction
   ) where
@@ -57,12 +58,8 @@ import System.Locale (defaultTimeLocale, rfc822DateFormat)
 
 data IrcError = IrcError String
               | UnknownServer Server
-              | MailformedMessage String
-
-instance Show IrcError where
-    show (IrcError str) = "Error: Unknown error"
-    show (UnknownServer srv) = "Trying to send to a unknown server: " ++ unpack srv
-    show (MailformedMessage msg) = "Recieved mailformed message (message was " ++ msg ++ ")"
+              | HandleError String
+              deriving (Show)
 
 type IrcLogger st = ((Maybe B.ByteString) -> B.ByteString -> Irc st ())
 
@@ -116,15 +113,18 @@ instance MonadState (IrcSettings st) (Irc st) where
         ref <- ask
         liftIO $ atomically $ writeTVar ref state
 
-defaultIrcLog :: Bool -> Handle -> IrcLogger st
-defaultIrcLog verbose hdl ext msg = do
+defaultIrcLogger :: Bool -> Maybe Handle -> IrcLogger st
+defaultIrcLogger verbose hdl ext msg = do
     date <- formatTime defaultTimeLocale rfc822DateFormat <$> liftIO getCurrentTime
 
-    liftIO $ hPutStrLn hdl $ format date ext (unpack msg)
+    when (isJust hdl) $ liftIO $ hPutStrLn (fromJust hdl) $ format date ext (unpack msg)
+
     when verbose $ liftIO $ putStrLn $ format date ext (unpack msg)
     where
         format date (Just mo) msg = "[" ++ date ++ "][" ++ unpack mo ++ "] " ++ msg
         format date Nothing   msg = "[" ++ date ++ "] " ++ msg
+
+
 
 mkRuntime :: [IrcServer] -> st -> IrcLogger st -> IO (IrcRuntime st)
 mkRuntime srvs ste lo = do
@@ -211,13 +211,17 @@ start action = do
     forM_ srvs $ \(server,(hdl,_)) -> void . fork . forever $
         case hdl of
           Just h -> handle server h
-          Nothing -> return ()       
+          Nothing -> logMessage Nothing $ "Warning: Malformed server handle: " `append` server       
     where
       handle server hdl = do
         line <- liftIO $ hGetLine hdl
         case parseMessage line of
-            Just msg -> runAction server msg action
+            Just msg -> run server msg action
             Nothing  -> logMessage Nothing $ "Warning: Malformed message: " `append` line
+      run server msg action = do
+        logMessage (Just server) (showMessage msg)
+        when (msgCommand msg == "PING") (send $ mkPong server (unwords $ msgParams msg))
+        runAction server msg action
    
 
 cleanup :: Irc st ()

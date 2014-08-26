@@ -6,72 +6,77 @@ import Control.Monad.IO.Class
 import Control.Monad.State
 import Control.Monad.Base
 import Control.Monad
-import Network.URI
-import Network.HTTP.Conduit hiding (host, port)
-import Data.ByteString.Char8 hiding (putStrLn, reverse, concatMap)
+
+import Control.Concurrent.MVar
+
+import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy as BL
+
+import Network.URI
+import Network.HTTP.Conduit     ( simpleHttp )
+
 import Network.IRC
-import Network.IRC.Command
-import Network.IRC.Message
 import Network.IRC.Action
-
-
-
-
-import Data.Conduit
-import qualified Data.Conduit.List as CL
-
 
 import Lsvm
 
 
+ircNick     = "jobotos"
+ircAltNick  = ircNick `B.append` "_"
+ircRealname = ircAltNick `B.append` "_"
 
-ircNick, ircAltNick, ircRealname :: ByteString
-ircNick     = pack "jobotos"
-ircAltNick  = ircNick `append` "_"
-ircRealname = ircAltNick `append` "_"
-
-freenode, quakenet :: IrcServerSettings
-freenode = IrcServerSettings
+freenode = IrcServer
     { host     = "irc.freenode.org"
     , port     = 6667
     , channels = ["#felixsch", "#moepmoepmoep"]
     , nick     = ircNick
     , altNick  = ircAltNick
-    , realName = ircRealname }
-quakenet = IrcServerSettings
+    , realName = ircRealname
+    , password = Nothing }
+
+quakenet = IrcServer
     { host     = "irc.quakenet.org"
     , port     = 6667
     , channels = ["#felixsch"]
     , nick     = ircNick
     , altNick  = ircAltNick
-    , realName = ircRealname }
+    , realName = ircRealname
+    , password = Nothing }
 
-
-myConfig = IrcConfig
-  { servers = [freenode, quakenet]
-  , verbose = True
-  }
 
 data JData = JData 
-  { lastSentence :: ByteString
+  { lastSentence :: B.ByteString
   , kittensFound :: Int
-  , images       :: [ByteString]
-  }
+  , images       :: [B.ByteString]
+  , quitTrigger  :: MVar Bool }
 
-mkJData :: JData
-mkJData = JData
-  { lastSentence = "blll"
-  , kittensFound = 0
-  , images       = []
-}
+mkJData :: IO JData
+mkJData = do
+   trigger <- newEmptyMVar  
+   return JData
+     { lastSentence = "blll"
+     , kittensFound = 0
+     , images       = []
+     , quitTrigger  = trigger }
 
+runJbot :: IO (Maybe IrcError)
+runJbot = do
+    jdata <- mkJData 
+    result <- runIrcMonad [quakenet,freenode] jdata (defaultIrcLogger True Nothing) (start actions)
+    waitUntil $ quitTrigger jdata
+    return result
 
-instance MonadIrc (StateT JData IO)
-
-
-
-lastS :: Action (StateT JData IO) ()
+    where
+        actions = lastS >> paramTest >> kittens >> kittenStats
+        waitUntil = void . readMVar
+ 
+main :: IO ()
+main = do
+    error <- runJbot
+    case error of
+        Just err -> putStrLn $ show err
+        Nothing  -> putStrLn "bye"
+lastS :: Action JData ()
 lastS = onPrivMsg checkTrigger
     where
         checkTrigger dest (x:xs)
@@ -79,87 +84,64 @@ lastS = onPrivMsg checkTrigger
           | otherwise    = saveLast $ x:xs
 
         showLast dest    = do        
-            state <- lift get 
-            say dest $ "Last sentence recorded: " `append` lastSentence state
+            state <- get 
+            say dest $ "Last sentence recorded: " `B.append` lastSentence state
 
         saveLast params  = do
-            state <- lift get
-            irc $ ircLog Nothing $ "params are: " ++ unpack (intercalate ", " params)
-            lift $ put (state { lastSentence = unwords params })
-            state2 <- lift get
-            irc $ ircLog Nothing $ "params are: " ++ unpack (lastSentence state2)
+            state <- get
+            logM "lastS" $ "params are: " `B.append` B.intercalate ", " params
+            modify (\state -> state { lastSentence = B.unwords params })
 
-paramTest :: Action (StateT JData IO) ()
+paramTest :: Action JData ()
 paramTest = whenTrigger "!params" $ \dest params ->
-    say dest $ "Params where: " `append` intercalate ", " params
-
-
-runJbot :: IO (Maybe IrcError)
-runJbot = from <$> (runStateT (runIRC myConfig actions) mkJData)
-    where
-        actions = lastS >> paramTest >> kittens >> kittenStats >> hurray
-        from (x, _) = x
+    say dest $ "Params where: " `B.append` B.intercalate ", " params
     
-
-hurray :: Action (StateT JData IO) ()
-hurray = whenTrigger "!hurray" $ \dest _ -> do
-    hur <- test <$> (irc $ get)
-    say dest $ "Hurray: " `append` hur
-
-main :: IO ()
-main = do
-    error <- runJbot
-    case error of
-        Just err -> putStrLn $ show err
-        Nothing  -> putStrLn "bye"
-
-    
-kittens :: Action (StateT JData IO) ()
+kittens :: Action JData ()
 kittens = onPrivMsg $ \dest txt -> do
-    forM_ (concatMap words txt) $ \word -> whenURI word $ do
+    forM_ (concatMap B.words txt) $ \word -> whenURI word $ do
         case isSupported word of
             Just ty  -> checkImage dest word ty
             otherwise -> return ()
 
-whenURI :: (MonadIO m) => ByteString -> (m ()) -> m ()
+whenURI :: (MonadIO m) => B.ByteString -> (m ()) -> m ()
 whenURI text cb = do
-    if isURI $ unpack text
+    if isURI $ B.unpack text
         then cb
         else return ()
 
 tmpImage = "/tmp/ircbot-catscanner"
 model    = "/mnt/files/git/ircbot/cat.xml"
 
-kittenStats :: Action (StateT JData IO) ()
+kittenStats :: Action JData ()
 kittenStats = whenTrigger "!kittens" $ \dest params -> do
-    dat <- lift $ get
-    say dest $ "Kittens found : " `append` (pack $ show $ kittensFound dat)
-    say dest $ "total images  : " `append` (pack $ show $ Prelude.length $ images dat)
+    dat <- get
+    say dest $ "Kittens found : " `B.append` (B.pack $ show $ kittensFound dat)
+    say dest $ "total images  : " `B.append` (B.pack $ show $ Prelude.length $ images dat)
     say dest $ "last 5 images :"
     forM_ (Prelude.take 5 $ images dat) $ \url ->
-        say dest $ "  - " `append` url
+        say dest $ "  - " `B.append` url
     
 
-checkImage :: ByteString -> ByteString -> String -> Action (StateT JData IO) ()
+checkImage :: B.ByteString -> B.ByteString -> String -> Action JData ()
 checkImage dest url ty = do
-    image <- liftIO $ simpleHttp $ unpack url
+    image <- liftIO $ simpleHttp $ B.unpack url
     liftIO $ BL.writeFile tmp image
 
     
-    lift $ modify (\dat -> dat { images = url : images dat })
+    modify (\dat -> dat { images = url : images dat })
     isACat <- liftIO $ detectCat tmp model (-0.4) 4
 
     if isACat
         then do
             say dest "Hurray a cute kitten..."
-            lift $ modify (\dat -> dat { kittensFound = kittensFound dat + 1 })
+            modify (\dat -> dat { kittensFound = kittensFound dat + 1 })
         else return ()
     where
         tmp = tmpImage ++ "." ++ ty
 
 
-isSupported :: ByteString -> Maybe String
-isSupported = isSup . reverse . unpack
+isSupported :: B.ByteString -> Maybe String
+isSupported = isSup . reverse . B.unpack
     where
         isSup ('g':'p':'j':_) = Just "jpg"
         isSup ('g':'n':'p':_) = Just "png"
