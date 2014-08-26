@@ -81,7 +81,7 @@ parseNickname :: Parser Origin
 parseNickname = Nickname <$ colon <*> name <*> maybeHost
     where
       name = takeTill (`elem` " .!") <* (bang <|> ws)
-      maybeHost = option Nothing $ Just <$> (char '~' *> takeTill (== ' ') <* ws)
+      maybeHost = option Nothing $ Just <$> (many (char '~') *> takeTill (== ' ') <* ws)
 
 parseCommand :: Parser ByteString
 parseCommand = (takeWhile1 isUpper <|> takeWhile1 isDigit) <* ws
