@@ -9,6 +9,14 @@ module Network.IRC.Action
   , onChannel
   , onPrivMsg
   , whenTrigger
+  , Cloak
+  , genCloak
+  , Privilige
+  , WithPriviliges(..)
+  , withPriviliges
+  , whenAdmin
+  , whenMod
+
   )
   where
 
@@ -41,7 +49,7 @@ notice user msg = do
 join :: Destination -> Action st ()
 join channel = do
     server <- fst <$> current
-    irc $ send $ mkJoin channel channel
+    irc $ send $ mkJoin server channel
 
 type ActionName = B.ByteString
 
@@ -52,7 +60,7 @@ logM name msg = irc $ logMessage (Just name) msg
 onChannel :: Channel -> ([Param] -> Action st ()) -> Action st ()
 onChannel channel cmd = checkIfChannel =<< current
     where
-        checkIfChannel (server, msg@(Message _ "PRIVMSG" (x:xs)))
+        checkIfChannel (_, Message _ "PRIVMSG" (x:xs))
           | channel == x = cmd xs
           | otherwise    = return ()
         checkIfChannel _  = return ()
@@ -62,7 +70,7 @@ onPrivMsg action = do
     msg <- snd <$> current
     when (isCommand "PRIVMSG" msg) $ setupAction msg
     where
-        setupAction msg@(Message _ _ (x:xs)) = action x xs
+        setupAction (Message _ _ (x:xs)) = action x xs
 
 
 whenTrigger :: B.ByteString -> (B.ByteString -> [Param] -> Action m ()) -> Action m ()
@@ -76,3 +84,42 @@ isCommand :: B.ByteString -> Message -> Bool
 isCommand cmd (Message _ cmd' _)
     | cmd == cmd' = True
     | otherwise   = False
+
+isChannel :: B.ByteString -> Bool
+isChannel = check . B.unpack
+    where
+      check ('#':_) = True
+      check _       = False
+
+type Privilige = B.ByteString
+type Cloak     = B.ByteString
+
+genCloak :: Maybe Origin -> Maybe Cloak
+genCloak (Just (Nickname _ (Just h))) = Just h
+genCloak _                            = Nothing
+
+class WithPriviliges st where
+    isAdmin :: Cloak -> Action st Bool
+    isAdmin = hasPrivilige "admin"
+
+    isMod   :: Cloak -> Action st Bool
+    isMod   = hasPrivilige "mod"
+
+    hasPrivilige :: Privilige -> Cloak -> Action st Bool
+
+
+withPriviliges :: (WithPriviliges st) => (Cloak -> Action st Bool) -> Action st () -> Action st ()
+withPriviliges check action = do
+    cloak <- genCloak . msgOrigin . snd <$> current
+    case cloak of 
+      Nothing -> return ()
+      Just cl -> do
+        isAllowed <- check cl
+        when isAllowed action
+
+whenAdmin :: (WithPriviliges st) => Action st () -> Action st ()
+whenAdmin = withPriviliges isAdmin
+
+whenMod :: (WithPriviliges st) => Action st () -> Action st ()
+whenMod = withPriviliges isMod
+
