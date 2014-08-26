@@ -59,7 +59,7 @@ mkPut :: Server -> Destination -> B.ByteString -> Cmd
 mkPut server channel msg = raw server "PRIVMSG" [channel] (Just msg)
 
 mkNotice :: Server -> Name -> B.ByteString -> Cmd
-mkNotice server nick msg = raw server "NOTICE" (nick : [msg]) Nothing
+mkNotice server nick msg = raw server "NOTICE" [nick] (Just msg)
 
 mkMe :: Server -> Destination -> B.ByteString -> Cmd
 mkMe server dest msg = raw server ('\x01' `B.cons` "ACTION") [dest, msg, "\x01"] Nothing

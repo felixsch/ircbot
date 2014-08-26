@@ -20,6 +20,7 @@ module Network.IRC
   , logMessage
   , defaultIrcLogger
   , current
+  , currentUser
   , runAction
   ) where
 
@@ -129,7 +130,7 @@ mkRuntime srvs ste lo = do
     stref <- atomically $ newTVar ste
     atomically $ newTVar IrcSettings
       { servers        = initConnections srvs
-      , actionTimeout  = 200000
+      , actionTimeout  = 20000000
       , logger         = lo
       , userState      = stref }
     where
@@ -171,13 +172,21 @@ current = (,) <$> server <*> message
         server  = currentServer <$> ask
         message = currentMessage <$> ask
 
+currentUser :: Action st Name
+currentUser = getName . msgOrigin . currentMessage <$> ask 
+    where
+        getName (Just (Host n))       = n
+        getName (Just (Nickname n _)) = n
+        getName _                     = B.empty
+
+
 irc :: Irc st a -> Action st a
 irc = liftBase
 
 runAction :: Server -> Message -> Action st () -> Irc st ()
 runAction server message (Action action) = do
     runtime <- get
-    timeout (actionTimeout runtime) $ void $ fork $ runReaderT action (mkActionRuntime $ userState runtime)
+    void $ fork $ timeout (actionTimeout runtime) $ runReaderT action (mkActionRuntime $ userState runtime)
     where
         mkActionRuntime = ActionRuntime server message
 

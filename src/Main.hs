@@ -37,7 +37,7 @@ freenode = IrcServer
 quakenet = IrcServer
     { host     = "irc.quakenet.org"
     , port     = 6667
-    , channels = ["#felixsch"]
+    , channels = ["#felixsch", "#hacky.v2"]
     , nick     = ircNick
     , altNick  = ircAltNick
     , realName = ircRealname
@@ -113,13 +113,14 @@ tmpImage = "/tmp/ircbot-catscanner"
 model    = "/mnt/files/git/ircbot/cat.xml"
 
 kittenStats :: Action JData ()
-kittenStats = whenTrigger "!kittens" $ \dest params -> do
+kittenStats = whenTrigger "!kittens" $ \dest _ -> do
     dat <- get
-    say dest $ "Kittens found : " `B.append` (B.pack $ show $ kittensFound dat)
-    say dest $ "total images  : " `B.append` (B.pack $ show $ Prelude.length $ images dat)
-    say dest $ "last 5 images :"
+    nick <- currentUser
+    notice nick $ "Kittens found : " `B.append` (B.pack $ show $ kittensFound dat)
+    notice nick $ "total images  : " `B.append` (B.pack $ show $ Prelude.length $ images dat)
+    notice nick $ "last 5 images :"
     forM_ (Prelude.take 5 $ images dat) $ \url ->
-        say dest $ "  - " `B.append` url
+        notice nick $ "  - " `B.append` url
     
 
 checkImage :: B.ByteString -> B.ByteString -> String -> Action JData ()
