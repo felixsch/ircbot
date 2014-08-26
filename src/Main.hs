@@ -36,7 +36,7 @@ freenode, quakenet :: IrcServer
 freenode = IrcServer
     { host     = "irc.freenode.org"
     , port     = 6667
-    , channels = ["#felixsch", "#moepmoepmoep"]
+    , channels = ["#felixsch"]
     , nick     = ircNick
     , altNick  = ircAltNick
     , realName = ircRealname
@@ -72,8 +72,7 @@ mkData = do
      { recordedWords = 0
      , images        = []
      , quit          = trigger
-     , admins        = [ "felixsch@37.247.54.27"
-                       , "felixsch@2a00:dcc0:eda:3754:247:55:6e8a:1dfa"] }
+     , admins        = [] }
        
 
 runJbot :: IO (Maybe IrcError)
