@@ -33,16 +33,13 @@ import Control.Monad.Reader
 import Control.Monad.Except
 import Control.Monad.State
 import Control.Monad.STM
-import Control.Monad.Catch
 import Control.Monad.Trans.Control
-import Control.Monad.Trans.Except
 import qualified System.Timeout as T ( timeout )
 import Control.Concurrent
 import Control.Concurrent.STM.TVar
 
 import Data.Monoid
 import Data.Maybe
-import Data.Char (chr)
 import Data.ByteString.Char8 hiding (putStrLn, hPutStrLn)
 import qualified Data.ByteString.Char8 as B
 import Data.Time.Clock (getCurrentTime)
@@ -61,7 +58,7 @@ data IrcError = IrcError String
               | HandleError String
               deriving (Show)
 
-type IrcLogger st = ((Maybe B.ByteString) -> B.ByteString -> Irc st ())
+type IrcLogger st = Maybe B.ByteString -> B.ByteString -> Irc st ()
 
 data IrcSettings st = IrcSettings 
   { servers           :: [(Server, (Maybe Handle, IrcServer))]
@@ -109,9 +106,9 @@ instance (Monoid a) => Monoid (Irc st a) where
 
 instance MonadState (IrcSettings st) (Irc st) where
     get = liftIO . readTVarIO =<< ask
-    put state = do
+    put sta = do
         ref <- ask
-        liftIO $ atomically $ writeTVar ref state
+        liftIO $ atomically $ writeTVar ref sta
 
 defaultIrcLogger :: Bool -> Maybe Handle -> IrcLogger st
 defaultIrcLogger verbose hdl ext msg = do
@@ -121,8 +118,8 @@ defaultIrcLogger verbose hdl ext msg = do
 
     when verbose $ liftIO $ putStrLn $ format date ext (unpack msg)
     where
-        format date (Just mo) msg = "[" ++ date ++ "][" ++ unpack mo ++ "] " ++ msg
-        format date Nothing   msg = "[" ++ date ++ "] " ++ msg
+        format date (Just mo) m = "[" ++ date ++ "][" ++ unpack mo ++ "] " ++ m
+        format date Nothing   m = "[" ++ date ++ "] " ++ m
 
 
 
@@ -139,8 +136,8 @@ mkRuntime srvs ste lo = do
       initConnections _     = []
 
 runIrcMonad :: [IrcServer] -> st -> IrcLogger st -> Irc st () -> IO (Maybe IrcError)
-runIrcMonad servers state logger (Irc m) = do
-    runtime <- mkRuntime servers state logger
+runIrcMonad srvs sta lo (Irc m) = do
+    runtime <- mkRuntime srvs sta lo
     result  <- runExceptT $ runReaderT m runtime
     return $ case result of
         Left x  -> Just x
@@ -163,9 +160,9 @@ instance MonadBase (Irc st) (Action st) where
 
 instance MonadState st (Action st) where
     get = liftIO . readTVarIO =<< (userStateRef <$> ask)
-    put state = do
+    put sta = do
         ref <- userStateRef <$> ask
-        liftIO $ atomically $ writeTVar ref state
+        liftIO $ atomically $ writeTVar ref sta
 
 current :: Action st (Server, Message)
 current = (,) <$> server <*> message
@@ -183,17 +180,17 @@ runAction server message (Action action) = do
     where
         mkActionRuntime = ActionRuntime server message
 
-logMessage :: (Maybe B.ByteString) -> B.ByteString -> Irc st ()
+logMessage :: Maybe B.ByteString -> B.ByteString -> Irc st ()
 logMessage ext msg = do
     l <- logger <$> get
     l ext msg
 
 send :: Cmd -> Irc st ()
 send cmd = do
-    cons <- servers <$> get
-    case lookup server cons of
+    co <- servers <$> get
+    case lookup server co of
         Just (Just hdl, _) -> do
-            logMessage (Just server) $ "> " `B.append` (pack $ show cmd)
+            logMessage (Just server) $ "> " `B.append` pack (show cmd)
             liftIO $ B.hPut hdl $ showCmd cmd `B.append` "\r\n"
         Nothing   -> throwError (UnknownServer server)
     where
@@ -218,10 +215,10 @@ start action = do
         case parseMessage line of
             Just msg -> run server msg action
             Nothing  -> logMessage Nothing $ "Warning: Malformed message: " `append` line
-      run server msg action = do
+      run server msg action' = do
         logMessage (Just server) (showMessage msg)
         when (msgCommand msg == "PING") (send $ mkPong server (unwords $ msgParams msg))
-        runAction server msg action
+        runAction server msg action'
    
 
 cleanup :: Irc st ()
@@ -229,7 +226,7 @@ cleanup = do
     srvs <- servers <$> get
     forM_ srvs $ \(_, (maybeHdl, _)) -> case maybeHdl of
         Just hdl -> liftIO $ hClose hdl
-        otherwise -> return ()
+        Nothing  -> return ()
 
 connectToIrc :: (Server,(Maybe Handle, IrcServer)) -> Irc st (Server, (Maybe Handle, IrcServer))
 connectToIrc (h, (Nothing, server)) = do
@@ -264,85 +261,3 @@ signOn server = do
             | h == server = Just conf
             | otherwise                 = findServer xs
         findServer []     = Nothing
-
-
-
-{-
-
-run :: (MonadIrc m) => Action m () -> IrcT m ()
-run actions = do
-    config <- askConfig
-    cons <- mapM connectToIrc $ servers config
-    modify (\conf -> conf { connections = cons })
-
-    forM_ cons $ \(server,_) -> void . fork $ signOn server
-
-    forM_ cons $ \(server,hdl) -> void . fork . forever $ do
-        line <- liftIO $ hGetLine hdl
-        case parseMessage line of
-            Just msg -> handleMessage server msg actions
-            Nothing  -> ircLog Nothing $ "Warning: Malformed message: " ++ (show $ unpack line)
-    modify (\state -> state { test = "hurray" })
-
-handleMessage :: (MonadIrc m ) => Server -> Message -> Action m () -> IrcT m ()
-handleMessage server msg actions = do
-    ircLog (Just $ unpack server) (unpack $ showMessage msg)
-    when (msgCommand msg == "PING") (send $ pong server (unwords $ msgParams msg))
-    dat
-    runAction server msg actions
-
-send :: (MonadIrc m) => Command -> IrcT m ()
-send cmd = do
-    cons <- connections <$> get
-    case lookup server cons of
-        Just hdl -> do
-            ircLog (Just $ unpack server) $ "> " ++ show cmd
-            sendIrc hdl $ showCommand cmd `append` "\r\n"
-        Nothing   -> throwError (UnknownServer $ commandDestination cmd)
-    where
-        server = commandDestination cmd
-
-sendIrc :: (MonadIrc m) => Handle -> ByteString -> IrcT m ()
-sendIrc hdl msg = liftIO $ hPut hdl msg
-
-signOn :: (MonadIrc m) => Server -> IrcT m ()
-signOn server = do
-    config <- getServerConfig
-    liftIO $ threadDelay 2000000
-    ircLog (Just $ unpack server) "Setup nickname..."
-    send $ setNickname server (nick config)
-
-    ircLog (Just $ unpack server) "Setup alternative nickname / realname..."
-    send $ setUsername server (altNick config) (realName config)
-    liftIO $ threadDelay 2000000
-
-    ircLog (Just $ unpack server) "Joining channels..."
-    mapM_ (send . joinChannel server) (channels config)
- 
-
-    where
-        getServerConfig = do 
-            conf <- findServer . servers <$> askConfig
-            case conf of
-                Just x  -> return x
-                Nothing -> throwError $ IrcError "Unvalid server settings. Server config not found"
- 
-        findServer (x:xs)
-            | (pack $ host x) == server = Just x
-            | otherwise                 = findServer xs
-        findServer []     = Nothing
-
-
-    
-
-
-connectToIrc :: (MonadIrc m) => IrcServerSettings -> IrcT m (ByteString, Handle)
-connectToIrc server = do
-    ircLog Nothing $ "Connecting to " ++ host server
-    liftIO $ do 
-        hdl <- connectTo (host server) (PortNumber $ fromIntegral $ port server)
-        return (pack $ host server, hdl)
--}
---onChannel :: (Channel -> Action st m ()) -> Action st m ()
---onMessage :: (Nickname -> Cloak -> Action st m ()) -> Action st m ()
-

@@ -19,7 +19,6 @@ module Network.IRC.Command
 import Prelude hiding (unwords)
 
 import qualified Data.ByteString.Char8 as B
-import Data.Maybe
 
 import Network.IRC.Message
 
@@ -63,7 +62,7 @@ mkNotice :: Server -> Name -> B.ByteString -> Cmd
 mkNotice server nick msg = raw server "NOTICE" (nick : [msg]) Nothing
 
 mkMe :: Server -> Destination -> B.ByteString -> Cmd
-mkMe server dest msg = raw server ('\x01' `B.cons` "ACTION") [msg, "\x01"] Nothing
+mkMe server dest msg = raw server ('\x01' `B.cons` "ACTION") [dest, msg, "\x01"] Nothing
 
 
 

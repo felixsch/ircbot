@@ -13,7 +13,6 @@ module Network.IRC.Message
 import Prelude hiding (takeWhile, unwords, words)
 
 import Control.Monad
-import Control.Monad.IO.Class
 
 import Control.Applicative hiding (empty)
 
@@ -24,7 +23,6 @@ import Data.Attoparsec.ByteString.Char8
 
 type Hostname = ByteString
 type Name     = ByteString
-type NumCmd   = Int
 type Param    = ByteString
 
 
