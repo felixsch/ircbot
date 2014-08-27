@@ -137,7 +137,7 @@ kittenStats = whenTrigger "!kittens" $ \dest _ -> do
     say dest $ "Kittens found : " `B.append` B.pack (show $ countKittens $ images dat)
     say dest $ "total images  : " `B.append` B.pack (show $ Prelude.length $ images dat)
     say dest "last 3 images :"
-    forM_ (Prelude.take 5 $ images dat) $ \(url,isCat) ->
+    forM_ (Prelude.take 3 $ images dat) $ \(url,isCat) ->
         say dest $ if isCat 
             then "  - " `B.append` url `B.append` " (detected as cat)"
             else "  - " `B.append` url
