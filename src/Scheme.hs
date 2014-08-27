@@ -6,7 +6,8 @@ module Scheme
   , newEnvWith
   , WithScheme(..)
   , schemeEval
-  , schemeClearState ) where
+  , schemeClearState
+  , schemeGetDefined ) where
 
 
 
@@ -40,8 +41,17 @@ schemeEval tr = whenTrigger tr $ \dest params -> do
         say dest $ case result of
           Left err    -> err
           Right final -> B.pack $ show final
+
+schemeGetDefined :: (WithScheme st) => B.ByteString -> Action st ()
+schemeGetDefined tr = whenTrigger tr $ \dest _ -> do
+    env <- getEnv
+    say dest $ "Function defined: " `B.append` (B.intercalate ", " $ defined (global env)) 
+    where
+     defined = map fst . functs
+
+
             
         
 schemeClearState :: (WithScheme st) => B.ByteString -> Env st -> Action st ()
 schemeClearState tr env = whenTrigger tr $ \dest _ -> 
-    putEnv env >> say dest "Scheme context cleared"
+    putEnv env >> say dest "Context cleared"

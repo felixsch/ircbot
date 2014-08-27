@@ -93,6 +93,7 @@ runJbot = do
         actions = countWords >> kittens >> kittenStats 
                >> quitBot 
                >> schemeEval ">" 
+               >> schemeGetDefined "!def"
                >> schemeClearState "!clear" (newEnvWith 4000)
         waitUntil = void . readMVar
  
