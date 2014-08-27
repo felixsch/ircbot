@@ -17,10 +17,11 @@ import Network.IRC
 import Network.IRC.Action
 
 import Lsvm
+import Scheme
 
 ircNick, ircAltNick, ircRealname :: B.ByteString
 
-ircNick     = "jobotos"
+ircNick     = "jotesting"
 ircAltNick  = ircNick `B.append` "_"
 ircRealname = ircAltNick `B.append` "_"
 
@@ -36,7 +37,7 @@ freenode, quakenet :: IrcServer
 freenode = IrcServer
     { host     = "irc.freenode.org"
     , port     = 6667
-    , channels = ["#felixsch"]
+    , channels = ["#felixsch", "#moepmoepmoep"]
     , nick     = ircNick
     , altNick  = ircAltNick
     , realName = ircRealname
@@ -55,7 +56,8 @@ data Data = Data
   { recordedWords :: Int
   , images        :: [(B.ByteString, Bool)]
   , quit          :: MVar Bool
-  , admins        :: [Cloak] }
+  , admins        :: [Cloak]
+  , schemeSt        :: SchemeState Data }
 
 instance WithPriviliges Data where
     hasPrivilige "admin" cloak = do
@@ -65,6 +67,10 @@ instance WithPriviliges Data where
 
     hasPrivilige _       _     = return False
 
+instance WithScheme Data where
+    getScheme = schemeSt <$> get
+    putScheme s = modify (\dat -> dat { schemeSt = s })
+
 mkData :: IO Data
 mkData = do
    trigger <- newEmptyMVar  
@@ -72,7 +78,9 @@ mkData = do
      { recordedWords = 0
      , images        = []
      , quit          = trigger
-     , admins        = [] }
+     , admins        = [ "felixsch@37.247.54.27"
+                       , "felixsch!~felixsch@2a00:dcc0:eda:3754:247:55:6e8a:1dfa"]
+     , schemeSt      = mkSchemeSt }
        
 
 runJbot :: IO (Maybe IrcError)
@@ -83,7 +91,7 @@ runJbot = do
     return result
 
     where
-        actions = countWords >> kittens >> kittenStats >> quitBot
+        actions = countWords >> kittens >> kittenStats >> quitBot >> schemeEval ">" >> schemeClearState "!clear"
         waitUntil = void . readMVar
  
 main :: IO ()
@@ -95,7 +103,7 @@ main = do
 
 
 quitBot :: Action Data ()
-quitBot = whenTrigger "!quit" $ \dest _ -> whenAdmin $ do
+quitBot = whenAdmin $ whenTrigger "!quit" $ \dest _ -> do
     trigger <- quit <$> get
     me dest "is going offline"
     liftIO $ putMVar trigger True
@@ -104,9 +112,9 @@ quitBot = whenTrigger "!quit" $ \dest _ -> whenAdmin $ do
 countWords :: Action Data ()
 countWords = onPrivMsg checkTrigger
     where
-        checkTrigger dest (x:_)
+        checkTrigger dest (x:xs)
           | x == "?recorded" = showCountedWords dest
-          | otherwise     = modify (\dat -> dat { recordedWords = recordedWords dat + 1})
+          | otherwise     = modify (\dat -> dat { recordedWords = recordedWords dat + (length xs) + 1})
 
         showCountedWords dest = do
             count <- recordedWords <$> get

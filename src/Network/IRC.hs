@@ -3,6 +3,7 @@
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE FlexibleInstances #-}
+{-# LANGUAGE FlexibleContexts #-}
 
 module Network.IRC
   ( IrcError(..)
@@ -21,7 +22,7 @@ module Network.IRC
   , defaultIrcLogger
   , current
   , currentUser
-  , runAction
+  , evalAction
   ) where
 
 import Prelude hiding (unwords)
@@ -96,10 +97,10 @@ instance MonadBaseControl IO (Irc st) where
     liftBaseWith f = Irc (liftBaseWith (\runInM -> f (fmap StIrc . runInM . runIrc)))
     restoreM = Irc . restoreM . unStIrc
 
-fork :: Irc st () -> Irc st ThreadId
+fork :: (MonadBaseControl IO m) => m () -> m ThreadId
 fork = liftBaseDiscard forkIO
 
-timeout :: Int -> Irc st () -> Irc st ()
+timeout :: (MonadBaseControl IO m) => Int -> m () -> m ()
 timeout t m = void $ liftBaseWith (\runInIO -> T.timeout t (runInIO m)) 
 
 instance (Monoid a) => Monoid (Irc st a) where
@@ -150,15 +151,22 @@ data ActionRuntime st = ActionRuntime
   , currentMessage :: Message
   , userStateRef :: TVar st }
 
-newtype Action st a = Action (ReaderT (ActionRuntime st) (Irc st) a)
+newtype Action st a = Action { runAction :: ReaderT (ActionRuntime st) (Irc st) a }
     deriving (Functor, Monad, MonadIO, MonadReader (ActionRuntime st))
 
 instance Applicative (Action st) where
     pure = return
     (<*>) = ap
 
-instance MonadBase (Irc st) (Action st) where
-    liftBase = Action . lift
+instance MonadBase IO (Action st) where
+    liftBase = Action . lift . liftIO
+
+
+instance MonadBaseControl IO (Action st) where
+    newtype StM (Action st) a = StAction { unStAction :: StM (ReaderT (ActionRuntime st) (Irc st)) a}
+
+    liftBaseWith f = Action (liftBaseWith (\runInM -> f (fmap StAction . runInM . runAction)))
+    restoreM = Action . restoreM . unStAction
 
 instance MonadState st (Action st) where
     get = liftIO . readTVarIO =<< (userStateRef <$> ask)
@@ -181,10 +189,10 @@ currentUser = getName . msgOrigin . currentMessage <$> ask
 
 
 irc :: Irc st a -> Action st a
-irc = liftBase
+irc = Action . lift
 
-runAction :: Server -> Message -> Action st () -> Irc st ()
-runAction server message (Action action) = do
+evalAction :: Server -> Message -> Action st () -> Irc st ()
+evalAction server message (Action action) = do
     runtime <- get
     void $ fork $ timeout (actionTimeout runtime) $ runReaderT action (mkActionRuntime $ userState runtime)
     where
@@ -228,7 +236,7 @@ start action = do
       run server msg action' = do
         logMessage (Just server) (showMessage msg)
         when (msgCommand msg == "PING") (send $ mkPong server (B.unwords $ msgParams msg))
-        runAction server msg action'
+        evalAction server msg action'
    
 
 cleanup :: Irc st ()

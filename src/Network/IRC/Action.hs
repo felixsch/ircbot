@@ -1,7 +1,8 @@
 {-# LANGUAGE OverloadedStrings #-}
 
 module Network.IRC.Action
-  ( say
+  ( Action(..)
+  , say
   , me
   , notice
   , join
