@@ -1,10 +1,7 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module SchemeExpr 
- ( Symbol
- , Expr(..)
- , showType
- , parseExpr
+module Scheme.Parser
+ ( parseExpr 
  ) where
 
 
@@ -14,33 +11,7 @@ import Control.Applicative
 import qualified Data.ByteString.Char8 as B
 import Data.Attoparsec.ByteString.Char8
 
-type Symbol = B.ByteString
-
-data Expr = SString   B.ByteString
-          | SBool     Bool
-          | SInt      Int
-          | SList     [Expr]
-          | SSymbol   Symbol
-          | SFunction Symbol
-          | SBind     Symbol
-          | SNil
-
-instance Show Expr where
-    show (SString b) = B.unpack b
-    show (SBool   b) = show b
-    show (SInt    i) = show i
-    show (SSymbol s) = B.unpack s
-    show (SList   l) = "(" ++ unwords (map show l) ++ ")"
-    show (SNil     ) = "Nil"
-
-showType :: Expr -> B.ByteString
-showType (SString _) = "String"
-showType (SBool   _) = "Bool"
-showType (SInt    _) = "Int"
-showType (SSymbol _) = "Symbol"
-showType (SList   _) = "List"
-showType (SNil     ) = "Nil"
-
+import Scheme.Types
 
 parseExpr :: B.ByteString -> Maybe Expr
 parseExpr = from . parseOnly pList

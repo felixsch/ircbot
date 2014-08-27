@@ -37,7 +37,7 @@ freenode, quakenet :: IrcServer
 freenode = IrcServer
     { host     = "irc.freenode.org"
     , port     = 6667
-    , channels = ["#felixsch", "#moepmoepmoep"]
+    , channels = []
     , nick     = ircNick
     , altNick  = ircAltNick
     , realName = ircRealname
@@ -46,7 +46,7 @@ freenode = IrcServer
 quakenet = IrcServer
     { host     = "irc.quakenet.org"
     , port     = 6667
-    , channels = ["#felixsch"]
+    , channels = []
     , nick     = ircNick
     , altNick  = ircAltNick
     , realName = ircRealname
@@ -57,7 +57,7 @@ data Data = Data
   , images        :: [(B.ByteString, Bool)]
   , quit          :: MVar Bool
   , admins        :: [Cloak]
-  , schemeSt        :: SchemeState Data }
+  , schemeEnv        :: Env Data }
 
 instance WithPriviliges Data where
     hasPrivilige "admin" cloak = do
@@ -68,19 +68,18 @@ instance WithPriviliges Data where
     hasPrivilige _       _     = return False
 
 instance WithScheme Data where
-    getScheme = schemeSt <$> get
-    putScheme s = modify (\dat -> dat { schemeSt = s })
+    getEnv = schemeEnv <$> get
+    putEnv s = modify (\dat -> dat { schemeEnv = s })
 
 mkData :: IO Data
 mkData = do
    trigger <- newEmptyMVar  
    return Data
-     { recordedWords = 0
-     , images        = []
-     , quit          = trigger
-     , admins        = [ "felixsch@37.247.54.27"
-                       , "felixsch!~felixsch@2a00:dcc0:eda:3754:247:55:6e8a:1dfa"]
-     , schemeSt      = mkSchemeSt }
+     { recordedWords  = 0
+     , images         = []
+     , quit           = trigger
+     , admins         = []
+     , schemeEnv      = newEnvWith 4000 }
        
 
 runJbot :: IO (Maybe IrcError)
@@ -91,7 +90,10 @@ runJbot = do
     return result
 
     where
-        actions = countWords >> kittens >> kittenStats >> quitBot >> schemeEval ">" >> schemeClearState "!clear"
+        actions = countWords >> kittens >> kittenStats 
+               >> quitBot 
+               >> schemeEval ">" 
+               >> schemeClearState "!clear" (newEnvWith 4000)
         waitUntil = void . readMVar
  
 main :: IO ()
