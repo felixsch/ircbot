@@ -105,6 +105,7 @@ schemeMathOp name op e@(x:xs) = do
         typeTestFailed _             = False
 
         calc (SInt i) (SInt j) = return $ SInt $ i `op` j
+        calc x        y        = invalidTypes name "Int -> Int" [x,y]
 
 
 functionSkel :: (WithScheme st) => Symbol -> [Symbol] -> Expr -> [Expr] -> Scheme st Expr
