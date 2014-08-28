@@ -37,7 +37,7 @@ freenode, quakenet :: IrcServer
 freenode = IrcServer
     { host     = "irc.freenode.org"
     , port     = 6667
-    , channels = ["#felixsch"]
+    , channels = []
     , nick     = ircNick
     , altNick  = ircAltNick
     , realName = ircRealname
@@ -46,7 +46,7 @@ freenode = IrcServer
 quakenet = IrcServer
     { host     = "irc.quakenet.org"
     , port     = 6667
-    , channels = ["#felixsch"]
+    , channels = []
     , nick     = ircNick
     , altNick  = ircAltNick
     , realName = ircRealname
