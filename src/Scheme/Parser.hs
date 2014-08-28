@@ -52,8 +52,8 @@ pList = SList <$ ignr <* char '(' <*> many expr <* char ')' <* ignr
 pQuote :: Parser Expr 
 pQuote = do
     char '\''
-    p <- pExpr
+    p <- pList
     return $ SList [SSymbol "quote", p]
 
 pExpr :: Parser Expr
-pExpr = pInt <|> pBool <|> pString <|> pSymbol <|> pList <|> pQuote
+pExpr = pInt <|> pBool <|> pQuote <|> pString <|> pSymbol <|> pList

@@ -39,8 +39,11 @@ schemeEval tr = whenTrigger tr $ \dest params -> do
       Just expr -> timeout (evalTimeout env) $ do
         result <- evalScheme expr
         say dest $ case result of
-          Left err    -> err
-          Right final -> B.pack $ show final
+          Left err            -> err
+          Right (SFunction s) -> s `B.append` " defined."
+          Right (SBind s)     -> s `B.append` " defined."
+          Right (SSymbol s)   -> s `B.append` " set."
+          Right final         -> B.pack $ show final
 
 schemeGetDefined :: (WithScheme st) => B.ByteString -> Action st ()
 schemeGetDefined tr = whenTrigger tr $ \dest _ -> do

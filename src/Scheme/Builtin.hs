@@ -48,20 +48,27 @@ builtinSymbols = [ ("*", SFunction "mul")
                 , ("add", SFunction "add")
                 , ("neg", SFunction "neg")
                 , ("list", SFunction "list")
-                , ("defun", SBind "defun")
+                , ("defun", SBind "define")
+                , ("define", SBind "define")
+                , ("local", SBind "local")
                 , ("quote", SFunction "quote")
                 , ("lambda", SBind "lambda")
-                , ("let", SBind "let")]
+                , ("let", SBind "let")
+                , ("cons", SBind "cons")
+                , ("if", SBind "if")]
 
 builtinFuncts :: (WithScheme st) => [(Symbol, Call st)]
 builtinFuncts = [ ("mul", schemeMathOp "mul" (*))
                 , ("add", schemeMathOp "add" (+))
                 , ("neg", schemeMathOp "neg" (-))
                 , ("list", return . SList)
-                , ("defun", schemeDefun)
+                , ("define", schemeDefun)
+                , ("local", schemeLocal)
                 , ("quote", schemeQuote)
                 , ("lambda", schemeLambda)
-                , ("let", schemeLet)]
+                , ("let", schemeLet)
+                , ("cons", schemeCons)
+                , ("if", schemeIf)]
 
 
 
@@ -117,13 +124,17 @@ functionSkel symbol params body args = do
             return result
 
 schemeDefun :: (WithScheme st) => [Expr] -> Scheme st Expr
-schemeDefun (SSymbol s : SList params : body : []) = do
+schemeDefun (SList (SSymbol s : params) : body : []) = do
     paramSymbols <- mapM toSymbol params
 
     withGlobal (return . newFunction s (functionSkel s paramSymbols body))
 
     return $ SFunction s
-schemeDefun x   = invalidArguments "defun" 3 (length x)
+schemeDefun (SSymbol s : expr : [])                 = do
+    withGlobal (return . newSymbol s expr)
+
+    return $ SSymbol s
+schemeDefun x   = invalidArguments "define" 3 (length x)
 
 
 schemeLambda :: (WithScheme st) => [Expr] -> Scheme st Expr
@@ -155,6 +166,31 @@ schemeLet (SList defs : body : []) = do
         toPair (SList (SSymbol s : var : [])) = return (s,var)
         toPair (SList x)                      = invalidArguments "let assignment" 2 (length x)
 schemeLet x   = invalidArguments "let" 2 (length x)
+
+
+schemeLocal :: (WithScheme st) => [Expr] -> Scheme st Expr
+schemeLocal (SSymbol s : expr : []) = do
+    withScope (return . newSymbol s expr)
+    return $ SSymbol s
+schemeLocal x                       = invalidArguments "local" 2 (length x)
+
+
+schemeCons :: (WithScheme st) => [Expr] -> Scheme st Expr
+schemeCons (element : SList list : []) = return $ SList (element : list)
+schemeCons x                           = invalidArguments "cons" 2 (length x)
+
+schemeIf :: (WithScheme st) => [Expr] -> Scheme st Expr
+schemeIf (cond : exprIf : exprElse : []) = do 
+    result <- eval cond 
+    eval $ if isTrue result 
+        then exprIf
+        else exprElse
+    where
+        isTrue (SBool True) = True
+        isTrue (SInt x)
+          | x > 0           = True
+          | otherwise       = False
+        isTrue _            = False
 
 
 
