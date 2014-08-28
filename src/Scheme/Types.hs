@@ -32,6 +32,7 @@ data Expr = SString   B.ByteString
           | SFunction Symbol
           | SBind     Symbol
           | SNil
+          deriving (Eq)
 
 instance Show Expr where
     show (SString b) = B.unpack b

@@ -44,6 +44,10 @@ builtinSymbols :: [(Symbol, Expr)]
 builtinSymbols = [ ("*", SFunction "mul")
                 , ("+", SFunction "add")
                 , ("-", SFunction "neg")
+                , ("=", SFunction "eq")
+                , ("!=", SFunction "neq")
+                , ("neq", SFunction "neq")
+                , ("eq", SFunction "eq")
                 , ("mul", SFunction "mul")
                 , ("add", SFunction "add")
                 , ("neg", SFunction "neg")
@@ -68,7 +72,9 @@ builtinFuncts = [ ("mul", schemeMathOp "mul" (*))
                 , ("lambda", schemeLambda)
                 , ("let", schemeLet)
                 , ("cons", schemeCons)
-                , ("if", schemeIf)]
+                , ("if", schemeIf)
+                , ("eq", schemeTestOp "equal" (==))
+                , ("neq", schemeTestOp "not equal" (/=)) ]
 
 
 
@@ -192,6 +198,10 @@ schemeIf (cond : exprIf : exprElse : []) = do
           | otherwise       = False
         isTrue _            = False
 
+
+schemeTestOp :: (WithScheme st) => Symbol -> (Expr -> Expr -> Bool) -> [Expr] -> Scheme st Expr
+schemeTestOp s op (a : b : []) = return $ SBool (a `op` b)
+schemeTestOp s _  x            = invalidArguments s 2 (length x)
 
 
 
