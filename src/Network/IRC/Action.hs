@@ -27,22 +27,24 @@ import Control.Monad        ( when )
 import Network.IRC
 import Network.IRC.Command
 import Network.IRC.Message
-import qualified Data.ByteString.Char8 as B
 
-type Destination = B.ByteString
+import qualified Data.Text as T
 
-say :: B.ByteString -> B.ByteString -> Action st ()
+
+type Destination = T.Text
+
+say :: T.Text -> T.Text -> Action st ()
 say dest msg = do
     server <- fst <$> current
     irc $ send $ mkPut server dest msg
 
     
-me :: Destination -> B.ByteString -> Action st ()
+me :: Destination -> T.Text -> Action st ()
 me dest msg = do
     server <- fst <$> current
     irc $ send $ mkMe server dest msg
 
-notice :: Name -> B.ByteString -> Action st ()
+notice :: Name -> T.Text -> Action st ()
 notice user msg = do
     server <- fst <$> current
     irc $ send $ mkNotice server user msg
@@ -52,9 +54,9 @@ join channel = do
     server <- fst <$> current
     irc $ send $ mkJoin server channel
 
-type ActionName = B.ByteString
+type ActionName = T.Text
 
-logM :: ActionName -> B.ByteString -> Action st ()
+logM :: ActionName -> T.Text -> Action st ()
 logM name msg = irc $ logMessage (Just name) msg
 
 
@@ -66,7 +68,7 @@ onChannel channel cmd = checkIfChannel =<< current
           | otherwise    = return ()
         checkIfChannel _  = return ()
 
-onPrivMsg :: (B.ByteString -> [Param] -> Action st ()) -> Action st ()
+onPrivMsg :: (T.Text -> [Param] -> Action st ()) -> Action st ()
 onPrivMsg action = do
     msg <- snd <$> current
     when (isCommand "PRIVMSG" msg) $ setupAction msg
@@ -74,26 +76,26 @@ onPrivMsg action = do
         setupAction (Message _ _ (x:xs)) = action x xs
 
 
-whenTrigger :: B.ByteString -> (B.ByteString -> [Param] -> Action m ()) -> Action m ()
+whenTrigger :: T.Text -> (T.Text -> [Param] -> Action m ()) -> Action m ()
 whenTrigger trigger cmd = onPrivMsg checkTrigger
     where
         checkTrigger dest (x:params)
           | x == trigger = cmd dest params
           | otherwise = return ()
 
-isCommand :: B.ByteString -> Message -> Bool
+isCommand :: T.Text -> Message -> Bool
 isCommand cmd (Message _ cmd' _)
     | cmd == cmd' = True
     | otherwise   = False
 
-isChannel :: B.ByteString -> Bool
-isChannel = check . B.unpack
+isChannel :: T.Text -> Bool
+isChannel = check . T.unpack
     where
       check ('#':_) = True
       check _       = False
 
-type Privilige = B.ByteString
-type Cloak     = B.ByteString
+type Privilige = T.Text
+type Cloak     = T.Text
 
 genCloak :: Maybe Origin -> Maybe Cloak
 genCloak (Just (Nickname _ (Just h))) = Just h

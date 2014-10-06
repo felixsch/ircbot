@@ -16,15 +16,14 @@ module Scheme.Types
 
 import Control.Monad.Except
 
-
-import qualified Data.ByteString.Char8 as B
+import qualified Data.Text as T
 
 import Network.IRC.Action ( Action )
 
 
-type Symbol = B.ByteString
+type Symbol = T.Text
 
-data Expr = SString   B.ByteString
+data Expr = SString   T.Text
           | SBool     Bool
           | SInt      Int
           | SList     [Expr]
@@ -35,14 +34,14 @@ data Expr = SString   B.ByteString
           deriving (Eq)
 
 instance Show Expr where
-    show (SString b) = B.unpack b
+    show (SString b) = T.unpack b
     show (SBool   b) = show b
     show (SInt    i) = show i
-    show (SSymbol s) = B.unpack s
+    show (SSymbol s) = T.unpack s
     show (SList   l) = "'(" ++ unwords (map show l) ++ ")"
     show (SNil     ) = "Nil"
 
-showType :: Expr -> B.ByteString
+showType :: Expr -> T.Text
 showType (SString _) = "String"
 showType (SBool   _) = "Bool"
 showType (SInt    _) = "Int"
@@ -72,8 +71,8 @@ class WithScheme st where
     getEnv :: Action st (Env st)
     putEnv :: Env st -> Action st ()
 
-type Scheme st = ExceptT B.ByteString (Action st)
+type Scheme st = ExceptT T.Text (Action st)
 
-(...) :: B.ByteString -> B.ByteString -> B.ByteString
-(...) = B.append
+(...) :: T.Text -> T.Text -> T.Text
+(...) = T.append
 

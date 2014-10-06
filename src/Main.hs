@@ -7,6 +7,7 @@ import Control.Monad.State
 
 import Control.Concurrent.MVar
 
+import qualified Data.Text as T
 import qualified Data.ByteString.Char8 as B
 import qualified Data.ByteString.Lazy as BL
 
@@ -19,11 +20,11 @@ import Network.IRC.Action
 import Lsvm
 import Scheme
 
-ircNick, ircAltNick, ircRealname :: B.ByteString
+ircNick, ircAltNick, ircRealname :: T.Text
 
 ircNick     = "jotesting"
-ircAltNick  = ircNick `B.append` "_"
-ircRealname = ircAltNick `B.append` "_"
+ircAltNick  = ircNick `T.append` "_"
+ircRealname = ircAltNick `T.append` "_"
 
 
 tmpImage, model :: FilePath
@@ -54,7 +55,7 @@ quakenet = IrcServer
 
 data Data = Data
   { recordedWords :: Int
-  , images        :: [(B.ByteString, Bool)]
+  , images        :: [(T.Text, Bool)]
   , quit          :: MVar Bool
   , admins        :: [Cloak]
   , schemeEnv        :: Env Data }
@@ -62,7 +63,7 @@ data Data = Data
 instance WithPriviliges Data where
     hasPrivilige "admin" cloak = do
         adms <- admins <$> get
-        logM "privs" $ cloak `B.append` " == " `B.append` "admin?!"
+        logM "privs" $ cloak `T.append` " == " `T.append` "admin?!"
         return $ cloak `elem` adms
 
     hasPrivilige _       _     = return False
@@ -121,43 +122,43 @@ countWords = onPrivMsg checkTrigger
 
         showCountedWords dest = do
             count <- recordedWords <$> get
-            say dest $ "Recorded " `B.append` B.pack (show count) `B.append` " words."
+            say dest $ "Recorded " `T.append` T.pack (show count) `T.append` " words."
  
 kittens :: Action Data ()
 kittens = onPrivMsg $ \dest txt ->
-    forM_ (concatMap B.words txt) $ \word -> whenURI word $
+    forM_ (concatMap T.words txt) $ \word -> whenURI word $
         case isSupported word of
             Just ty  -> checkImage dest word ty
             Nothing  -> return ()
 
-whenURI :: (MonadIO m) => B.ByteString -> m () -> m ()
-whenURI text = when (isURI $ B.unpack text)
+whenURI :: (MonadIO m) => T.Text -> m () -> m ()
+whenURI text = when (isURI $ T.unpack text)
 
 
 kittenStats :: Action Data ()
 kittenStats = whenTrigger "!kittens" $ \dest _ -> do
     dat <- get
-    say dest $ "Kittens found : " `B.append` B.pack (show $ countKittens $ images dat)
-    say dest $ "total images  : " `B.append` B.pack (show $ Prelude.length $ images dat)
+    say dest $ "Kittens found : " `T.append` T.pack (show $ countKittens $ images dat)
+    say dest $ "total images  : " `T.append` T.pack (show $ Prelude.length $ images dat)
     say dest "last 3 images :"
     forM_ (Prelude.take 3 $ images dat) $ \(url,isCat) ->
         say dest $ if isCat 
-            then "  - " `B.append` url `B.append` " (detected as cat)"
-            else "  - " `B.append` url
+            then "  - " `T.append` url `T.append` " (detected as cat)"
+            else "  - " `T.append` url
     where
         countKittens ((_,True):xs) = 1 + countKittens xs
         countKittens (_:xs)        = 0 + countKittens xs
         countKittens []            = 0
     
 
-checkImage :: B.ByteString -> B.ByteString -> String -> Action Data ()
+checkImage :: T.Text -> T.Text -> String -> Action Data ()
 checkImage dest url ty = do
     imgs  <- images <$> get
 
     case lookup url imgs of
         Just isCat -> when isCat $ say dest "Uhm I remember this cute kitten.. :)"
         Nothing    -> do
-            image <- liftIO $ simpleHttp $ B.unpack url
+            image <- liftIO $ simpleHttp $ T.unpack url
             liftIO $ BL.writeFile tmp image
  
             isCat <- liftIO $ detectCat tmp model (-0.4) 4
@@ -168,8 +169,8 @@ checkImage dest url ty = do
         tmp = tmpImage ++ "." ++ ty
 
 
-isSupported :: B.ByteString -> Maybe String
-isSupported = isSup . reverse . B.unpack
+isSupported :: T.Text -> Maybe String
+isSupported = isSup . reverse . T.unpack
     where
         isSup ('g':'p':'j':_) = Just "jpg"
         isSup ('g':'n':'p':_) = Just "png"

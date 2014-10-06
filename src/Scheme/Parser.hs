@@ -8,12 +8,12 @@ module Scheme.Parser
 import Control.Monad
 import Control.Applicative
 
-import qualified Data.ByteString.Char8 as B
-import Data.Attoparsec.ByteString.Char8
+import qualified Data.Text as T
+import Data.Attoparsec.Text
 
 import Scheme.Types
 
-parseExpr :: B.ByteString -> Maybe Expr
+parseExpr :: T.Text -> Maybe Expr
 parseExpr = from . parseOnly pList
     where
       from (Left  _) = Nothing
@@ -37,11 +37,11 @@ pString :: Parser Expr
 pString = SString <$ char '"' <*> takeTill (== '"') <* char '"'
 
 pSymbol :: Parser Expr
-pSymbol = SSymbol <$> liftA2 B.cons start name
+pSymbol = SSymbol <$> liftA2 T.cons start name
     where
         symbol  = satisfy $ inClass "-+=!|&/*<>"
-        start   = letter_ascii <|> symbol
-        name    = B.pack <$> many (letter_ascii <|> symbol <|> digit)
+        start   = letter <|> symbol
+        name    = T.pack <$> many (letter <|> symbol <|> digit)
 
 pList :: Parser Expr
 pList = SList <$ ignr <* char '(' <*> many expr <* char ')' <* ignr

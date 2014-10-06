@@ -21,7 +21,7 @@ module Scheme.Env
 import Control.Monad.State
 import Control.Monad.Except
 
-import qualified Data.ByteString.Char8 as B
+import qualified Data.Text as T
 
 import Scheme.Types
 
@@ -106,7 +106,7 @@ findSymbol :: (WithScheme st) => Symbol -> Scheme st Expr
 findSymbol symbol = do
     env <- lift getEnv
     case lookup symbol (table env) of
-        Nothing -> throwError $ "Could not find symbol " `B.append` symbol
+        Nothing -> throwError $ "Could not find symbol " `T.append` symbol
         Just x  -> return x
     where
       table env = getAllSymbols (context env ++ [global env])
@@ -115,7 +115,7 @@ findFunc :: (WithScheme st) => Symbol -> Scheme st (Call st)
 findFunc symbol = do
     ctx <- lift getEnv
     case lookup symbol (table ctx) of
-        Nothing -> throwError $ "Could not find function " `B.append` symbol
+        Nothing -> throwError $ "Could not find function " `T.append` symbol
         Just x  -> return x
     where
       table env = getAllFuncts (context env ++ [global env])

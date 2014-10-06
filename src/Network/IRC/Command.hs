@@ -18,23 +18,23 @@ module Network.IRC.Command
 
 import Prelude hiding (unwords)
 
-import qualified Data.ByteString.Char8 as B
+import qualified Data.Text as T
 
 import Network.IRC.Message
 
-type Destination = B.ByteString
-type Channel = B.ByteString
-type Server  = B.ByteString
+type Destination = T.Text
+type Channel = T.Text
+type Server  = T.Text
 
 
 
-data Cmd = Cmd Server B.ByteString [Param] (Maybe Param)
+data Cmd = Cmd Server T.Text [Param] (Maybe Param)
 
 instance Show Cmd where
-    show = B.unpack . showCmd
+    show = T.unpack . showCmd
 
-showCmd :: Cmd -> B.ByteString
-showCmd (Cmd _ cmd params trail) = cmd `B.append` " " `B.append` B.unwords params `B.append` " " `B.append` maybe B.empty (B.cons ':') trail
+showCmd :: Cmd -> T.Text
+showCmd (Cmd _ cmd params trail) = cmd `T.append` " " `T.append` T.unwords params `T.append` " " `T.append` maybe T.empty (T.cons ':') trail
 
 cmdDestination :: Cmd -> Server
 cmdDestination (Cmd server _ _ _) = server
@@ -46,23 +46,23 @@ setUsername :: Server -> Name -> Name -> Cmd
 setUsername server name0 name1 = Cmd server "USER" [name0, "0", "*"] (Just name1)
 
 
-raw :: Server -> B.ByteString -> [Param]-> Maybe Param -> Cmd
+raw :: Server -> T.Text -> [Param]-> Maybe Param -> Cmd
 raw = Cmd
 
-mkPong :: Server -> B.ByteString -> Cmd
+mkPong :: Server -> T.Text -> Cmd
 mkPong server stamp = Cmd server "PONG" [] (Just stamp)
 
 mkJoin :: Server -> Channel -> Cmd
 mkJoin server channel = raw server "JOIN" [channel] Nothing
 
-mkPut :: Server -> Destination -> B.ByteString -> Cmd
+mkPut :: Server -> Destination -> T.Text -> Cmd
 mkPut server channel msg = raw server "PRIVMSG" [channel] (Just msg)
 
-mkNotice :: Server -> Name -> B.ByteString -> Cmd
+mkNotice :: Server -> Name -> T.Text -> Cmd
 mkNotice server nick msg = raw server "NOTICE" [nick] (Just msg)
 
-mkMe :: Server -> Destination -> B.ByteString -> Cmd
-mkMe server dest msg = raw server ('\x01' `B.cons` "ACTION") [dest, msg, "\x01"] Nothing
+mkMe :: Server -> Destination -> T.Text -> Cmd
+mkMe server dest msg = raw server ('\x01' `T.cons` "ACTION") [dest, msg, "\x01"] Nothing
 
 
 

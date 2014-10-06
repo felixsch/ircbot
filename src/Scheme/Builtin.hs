@@ -9,7 +9,7 @@ module Scheme.Builtin
 import Control.Applicative
 import Control.Monad.Except
 
-import qualified Data.ByteString.Char8 as B
+import qualified Data.Text as T
 
 import Scheme.Types
 import Scheme.Env
@@ -78,7 +78,7 @@ builtinFuncts = [ ("mul", schemeMathOp "mul" (*))
 
 
 
-invalidArguments :: B.ByteString -> Int -> Int -> Scheme st a
+invalidArguments :: T.Text -> Int -> Int -> Scheme st a
 invalidArguments name should has = throwError $ 
     name ... " is applied to " ... has' ... " arguments, but it takes " ... should' ... " arguments"
     where
@@ -91,13 +91,13 @@ invalidArguments name should has = throwError $
      toNumName 2 = "two"
      toNumName 3 = "three"
      toNumName 4 = "four"
-     toNumName x = B.pack $ show x
+     toNumName x = T.pack $ show x
 
-invalidTypes :: B.ByteString -> B.ByteString -> [Expr] -> Scheme st a
+invalidTypes :: T.Text -> T.Text -> [Expr] -> Scheme st a
 invalidTypes name should exprs = throwError $
     name ... ": Coult not match " ... should ... " with " ... signature
     where
-        signature = B.intercalate " -> " $ map showType exprs
+        signature = T.intercalate " -> " $ map showType exprs
 
 toSymbol :: Expr -> Scheme st Symbol
 toSymbol (SSymbol x) = return x
@@ -107,7 +107,7 @@ schemeQuote :: [Expr] -> Scheme st Expr
 schemeQuote (x:[]) = return x
 schemeQuote x      = invalidArguments "quote" 1 (length x)
 
-schemeMathOp :: B.ByteString -> (Int -> Int -> Int) -> [Expr] -> Scheme st Expr
+schemeMathOp :: T.Text -> (Int -> Int -> Int) -> [Expr] -> Scheme st Expr
 schemeMathOp name _  (_:[])   = invalidArguments name (-2) 1
 schemeMathOp name _  []       = invalidArguments name (-2) 0
 schemeMathOp name op e@(x:xs) = do
@@ -153,7 +153,7 @@ schemeLambda (SList params : body : []) = do
     return $ SFunction $ genName env
 
     where
-      genName env = "lambda_" `B.append` B.pack (show $ num $ current env)
+      genName env = "lambda_" `T.append` T.pack (show $ num $ current env)
       num scope = length (functs scope)
 schemeLambda x   = invalidArguments "lambda" 2 (length x)
 

@@ -50,9 +50,10 @@ import Data.Time.Format ( formatTime )
 import System.IO     ( hPutStrLn, hClose, Handle )
 import System.Locale ( defaultTimeLocale, rfc822DateFormat )
 
-import qualified System.Timeout as T  ( timeout )
+import qualified System.Timeout as SY  ( timeout )
 
-import qualified Data.ByteString.Char8 as B
+import qualified Data.Text as T
+import qualified Data.Text.IO as T
 
 
 
@@ -61,7 +62,7 @@ data IrcError = IrcError String
               | HandleError String
               deriving (Show)
 
-type IrcLogger st = Maybe B.ByteString -> B.ByteString -> Irc st ()
+type IrcLogger st = Maybe T.Text -> T.Text -> Irc st ()
 
 data IrcSettings st = IrcSettings 
   { servers           :: [(Server, (Maybe Handle, IrcServer))]
@@ -71,13 +72,13 @@ data IrcSettings st = IrcSettings
 
 
 data IrcServer = IrcServer
-  { host     :: B.ByteString
+  { host     :: T.Text
   , port     :: Int
-  , channels :: [B.ByteString]
-  , nick     :: B.ByteString
-  , altNick  :: B.ByteString
-  , realName :: B.ByteString
-  , password :: Maybe B.ByteString }
+  , channels :: [T.Text]
+  , nick     :: T.Text
+  , altNick  :: T.Text
+  , realName :: T.Text
+  , password :: Maybe T.Text }
 
 type IrcRuntime st = TVar (IrcSettings st)
 
@@ -101,7 +102,7 @@ fork :: (MonadBaseControl IO m) => m () -> m ThreadId
 fork = liftBaseDiscard forkIO
 
 timeout :: (MonadBaseControl IO m) => Int -> m () -> m ()
-timeout t m = void $ liftBaseWith (\runInIO -> T.timeout t (runInIO m)) 
+timeout t m = void $ liftBaseWith (\runInIO -> SY.timeout t (runInIO m)) 
 
 instance (Monoid a) => Monoid (Irc st a) where
     mempty = return mempty
@@ -117,11 +118,11 @@ defaultIrcLogger :: Bool -> Maybe Handle -> IrcLogger st
 defaultIrcLogger verbose hdl ext msg = do
     date <- formatTime defaultTimeLocale rfc822DateFormat <$> liftIO getCurrentTime
 
-    when (isJust hdl) $ liftIO $ hPutStrLn (fromJust hdl) $ format date ext (B.unpack msg)
+    when (isJust hdl) $ liftIO $ hPutStrLn (fromJust hdl) $ format date ext (T.unpack msg)
 
-    when verbose $ liftIO $ putStrLn $ format date ext (B.unpack msg)
+    when verbose $ liftIO $ putStrLn $ format date ext (T.unpack msg)
     where
-        format date (Just mo) m = "[" ++ date ++ "][" ++ B.unpack mo ++ "] " ++ m
+        format date (Just mo) m = "[" ++ date ++ "][" ++ T.unpack mo ++ "] " ++ m
         format date Nothing   m = "[" ++ date ++ "] " ++ m
 
 
@@ -185,7 +186,7 @@ currentUser = getName . msgOrigin . currentMessage <$> ask
     where
         getName (Just (Host n))       = n
         getName (Just (Nickname n _)) = n
-        getName _                     = B.empty
+        getName _                     = T.empty
 
 
 irc :: Irc st a -> Action st a
@@ -198,7 +199,7 @@ evalAction server message (Action action) = do
     where
         mkActionRuntime = ActionRuntime server message
 
-logMessage :: Maybe B.ByteString -> B.ByteString -> Irc st ()
+logMessage :: Maybe T.Text -> T.Text -> Irc st ()
 logMessage ext msg = do
     l <- logger <$> get
     l ext msg
@@ -208,8 +209,8 @@ send cmd = do
     co <- servers <$> get
     case lookup server co of
         Just (Just hdl, _) -> do
-            logMessage (Just server) $ "> " `B.append` B.pack (show cmd)
-            liftIO $ B.hPut hdl $ showCmd cmd `B.append` "\r\n"
+            logMessage (Just server) $ "> " `T.append` T.pack (show cmd)
+            liftIO $ T.hPutStrLn hdl $ showCmd cmd `T.append` "\r"
         Nothing   -> throwError (UnknownServer server)
     where
         server = cmdDestination cmd
@@ -226,16 +227,16 @@ start action = do
     forM_ srvs $ \(server,(hdl,_)) -> void . fork . forever $
         case hdl of
           Just h -> handle server h
-          Nothing -> logMessage Nothing $ "Warning: Malformed server handle: " `B.append` server       
+          Nothing -> logMessage Nothing $ "Warning: Malformed server handle: " `T.append` server       
     where
       handle server hdl = do
-        line <- liftIO $ B.hGetLine hdl
+        line <- liftIO $ T.hGetLine hdl
         case parseMessage line of
             Just msg -> run server msg action
-            Nothing  -> logMessage Nothing $ "Warning: Malformed message: " `B.append` line
+            Nothing  -> logMessage Nothing $ "Warning: Malformed message: " `T.append` line
       run server msg action' = do
         logMessage (Just server) (showMessage msg)
-        when (msgCommand msg == "PING") (send $ mkPong server (B.unwords $ msgParams msg))
+        when (msgCommand msg == "PING") (send $ mkPong server (T.unwords $ msgParams msg))
         evalAction server msg action'
    
 
@@ -248,9 +249,9 @@ cleanup = do
 
 connectToIrc :: (Server,(Maybe Handle, IrcServer)) -> Irc st (Server, (Maybe Handle, IrcServer))
 connectToIrc (h, (Nothing, server)) = do
-    logMessage Nothing $ "Connection to " `B.append` h
+    logMessage Nothing $ "Connection to " `T.append` h
     liftIO $ do 
-        hdl <- connectTo (B.unpack h) (PortNumber $ fromIntegral $ port server)
+        hdl <- connectTo (T.unpack h) (PortNumber $ fromIntegral $ port server)
         return (h, (Just hdl, server))
 connectToIrc settings@(h,_) = logMessage (Just h) "Host is already connected" >> return settings
 

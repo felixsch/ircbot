@@ -16,14 +16,15 @@ import Control.Monad
 
 import Control.Applicative hiding (empty)
 
-import Data.Char (isUpper)
-import Data.ByteString.Char8 hiding (takeWhile, elem, concatMap)
-import Data.Attoparsec.ByteString.Char8
+import Data.Char (isUpper, isDigit)
+
+import qualified Data.Text as T
+import Data.Attoparsec.Text
 
 
-type Hostname = ByteString
-type Name     = ByteString
-type Param    = ByteString
+type Hostname = T.Text
+type Name     = T.Text
+type Param    = T.Text
 
 
 data Origin = Host Hostname
@@ -31,31 +32,31 @@ data Origin = Host Hostname
 
 data Message = Message
   { msgOrigin :: Maybe Origin
-  , msgCommand   :: ByteString
+  , msgCommand   :: T.Text
   , msgParams :: [Param] }
 
 
 
 
 instance Show Message where
-    show msg = unpack $ intercalate "," $ msgParams msg
+    show msg = T.unpack $ T.intercalate "," $ msgParams msg
 
-showMessage :: Message -> ByteString
-showMessage msg = prefix (msgOrigin msg) `append` unwords (msgCommand msg : msgParams msg)
+showMessage :: Message -> T.Text
+showMessage msg = prefix (msgOrigin msg) `T.append` T.unwords (msgCommand msg : msgParams msg)
     where
-        prefix (Just (Host a))            = ':' `cons` a `append` " "
-        prefix (Just (Nickname n (Just h))) = ':' `cons` n `append` "!~" `append` h `append` " "
-        prefix (Just (Nickname n Nothing))  = ':' `cons` n `append` " "
-        prefix Nothing                      = empty
+        prefix (Just (Host a))            = ':' `T.cons` a `T.append` " "
+        prefix (Just (Nickname n (Just h))) = ':' `T.cons` n `T.append` "!~" `T.append` h `T.append` " "
+        prefix (Just (Nickname n Nothing))  = ':' `T.cons` n `T.append` " "
+        prefix Nothing                      = T.empty
 
 
-parseMessage :: ByteString -> Maybe Message
+parseMessage :: T.Text -> Maybe Message
 parseMessage = fromEither . parseOnly parser
     where
         parser = Message <$> parseOrigin <*> parseCommand <*> (toWords <$> parseParams)
         fromEither (Left _)    = Nothing
         fromEither (Right msg) = Just msg
-        toWords = concatMap words
+        toWords = concatMap T.words
 
 colon :: Parser Char
 colon = char ':'
@@ -83,10 +84,10 @@ parseNickname = Nickname <$ colon <*> name <*> maybeHost
       name = takeTill (`elem` " .!") <* (bang <|> ws)
       maybeHost = option Nothing $ Just <$> (many (char '~') *> takeTill (== ' ') <* ws)
 
-parseCommand :: Parser ByteString
+parseCommand :: Parser T.Text
 parseCommand = (takeWhile1 isUpper <|> takeWhile1 isDigit) <* ws
 
-parseParams :: Parser [ByteString]
+parseParams :: Parser [T.Text]
 parseParams = many (end <|> str)
     where
         end = colon *> takeWhile (/= '\r') <* le
