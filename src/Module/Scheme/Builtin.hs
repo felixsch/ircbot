@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Scheme.Builtin 
+module Module.Scheme.Builtin 
  ( eval
  , builtin
  , newEnvWith
@@ -11,8 +11,8 @@ import Control.Monad.Except
 
 import qualified Data.Text as T
 
-import Scheme.Types
-import Scheme.Env
+import Module.Scheme.Types
+import Module.Scheme.Env
 
 eval :: (WithScheme st) => Expr -> Scheme st Expr
 eval (SSymbol s)    = findSymbol s

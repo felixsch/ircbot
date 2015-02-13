@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Scheme.Types
+module Module.Scheme.Types
   ( Symbol
   , Expr (..)
   , showType

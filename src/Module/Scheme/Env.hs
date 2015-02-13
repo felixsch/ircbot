@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Scheme.Env
+module Module.Scheme.Env
   ( current
   , removeLastScope
   , consNewScope
@@ -23,7 +23,7 @@ import Control.Monad.Except
 
 import qualified Data.Text as T
 
-import Scheme.Types
+import Module.Scheme.Types
 
 
 safeHead :: [Scope st] -> Scope st

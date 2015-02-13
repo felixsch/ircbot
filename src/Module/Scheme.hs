@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Scheme
+module Module.Scheme
   ( Env (..)
   , emptyEnv
   , newEnvWith
@@ -21,10 +21,10 @@ import Network.IRC.Action
 import Data.List
 import qualified Data.Text as T
 
-import Scheme.Parser
-import Scheme.Types
-import Scheme.Env
-import Scheme.Builtin
+import Module.Scheme.Parser
+import Module.Scheme.Types
+import Module.Scheme.Env
+import Module.Scheme.Builtin
 
 evalScheme :: (WithScheme st) => Expr -> Action st (Either T.Text Expr)
 evalScheme expr = runExceptT (eval expr)

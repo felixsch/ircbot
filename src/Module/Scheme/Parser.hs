@@ -1,6 +1,6 @@
 {-# LANGUAGE OverloadedStrings #-}
 
-module Scheme.Parser
+module Module.Scheme.Parser
  ( parseExpr 
  ) where
 
@@ -11,7 +11,7 @@ import Control.Applicative
 import qualified Data.Text as T
 import Data.Attoparsec.Text
 
-import Scheme.Types
+import Module.Scheme.Types
 
 parseExpr :: T.Text -> Maybe Expr
 parseExpr = from . parseOnly pList

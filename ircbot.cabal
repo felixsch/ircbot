@@ -4,23 +4,21 @@
 name:                ircbot
 version:             0.1.0.0
 synopsis:            A simple ircbot
--- description:         
+description:         A simple ircbot programmable in a monadic way with generic data support
 homepage:            http://github.com/felixsch/ircbot
 license:             GPL-2
 license-file:        LICENSE
 author:              Felix Schnizlein
 maintainer:          felix@fix3d.net
--- copyright:           
 category:            Network
 build-type:          Simple
 extra-source-files:  README.md
 cabal-version:       >=1.10
 
-executable ircbot
-  main-is:             Main.hs
-  -- other-modules:       
-  -- other-extensions:    
-  build-depends:       base >=4.5 && <4.7.0.1
+executable ircbot-example
+  main-is:             Example.hs
+  
+  build-depends:       base >=4.5 && <4.8
                      , mtl >= 2.1.2
                      , stm >= 2.4.2
                      , transformers >= 0.4.0.0
@@ -34,8 +32,9 @@ executable ircbot
                      , transformers-base >= 0.4.2
                      , monad-control >= 0.3.3.0
                      , network-uri >= 2.6.0.1
+
   pkgconfig-depends:   opencv
-  c-sources:           src/detectTheCat.c
+  c-sources:           src/Module/detectTheCat.c
   ghc-options:         -threaded -O3
   hs-source-dirs:      src/
   default-language:    Haskell2010

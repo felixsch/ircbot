@@ -2,6 +2,7 @@
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 {-# LANGUAGE FlexibleInstances #-}
 {-# LANGUAGE FlexibleContexts #-}
 
@@ -93,10 +94,11 @@ instance MonadBase IO (Irc st) where
     liftBase = Irc . lift . lift
 
 instance MonadBaseControl IO (Irc st) where
-    newtype StM (Irc st) a = StIrc { unStIrc :: StM (ReaderT (IrcRuntime st) (ExceptT IrcError IO)) a}
+    type StM (Irc st) a = StM (ReaderT (IrcRuntime st) (ExceptT IrcError IO)) a
 
-    liftBaseWith f = Irc (liftBaseWith (\runInM -> f (fmap StIrc . runInM . runIrc)))
-    restoreM = Irc . restoreM . unStIrc
+    liftBaseWith f = Irc  . liftBaseWith $ \runInM ->
+      f $ runInM . runIrc
+    restoreM = Irc . restoreM
 
 fork :: (MonadBaseControl IO m) => m () -> m ThreadId
 fork = liftBaseDiscard forkIO
@@ -164,10 +166,11 @@ instance MonadBase IO (Action st) where
 
 
 instance MonadBaseControl IO (Action st) where
-    newtype StM (Action st) a = StAction { unStAction :: StM (ReaderT (ActionRuntime st) (Irc st)) a}
+    type StM (Action st) a = StM (ReaderT (ActionRuntime st) (Irc st)) a
 
-    liftBaseWith f = Action (liftBaseWith (\runInM -> f (fmap StAction . runInM . runAction)))
-    restoreM = Action . restoreM . unStAction
+    liftBaseWith f = Action . liftBaseWith $ \runInM ->
+      f $ runInM . runAction
+    restoreM = Action . restoreM
 
 instance MonadState st (Action st) where
     get = liftIO . readTVarIO =<< (userStateRef <$> ask)
